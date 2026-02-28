@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Play, Loader2, Save, Folder, Plus, X } from 'lucide-react';
+import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import { KeyValueEditor } from './KeyValueEditor';
 import type { KeyValueStore } from './KeyValueEditor';
 import { useLocalStorage } from './useLocalStorage';
@@ -611,520 +612,536 @@ function App() {
 
   return (
     <div className="app-container" style={{ display: 'flex', height: '100vh', width: '100vw' }}>
-
-      <aside className="sidebar glass-panel" style={{ width: '260px', borderRight: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column' }}>
-        <div style={{ padding: '16px', borderBottom: '1px solid var(--border-color)' }}>
-          <h1 style={{ fontSize: '1.2rem', fontWeight: 600, letterSpacing: '-0.02em', background: 'linear-gradient(to right, #fff, #a0a6b5)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>API360</h1>
-        </div>
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
-          <div style={{ padding: '16px', color: 'var(--text-muted)', fontSize: '0.875rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span>Collections</span>
-              <button
-                onClick={() => setIsCollectionModalOpen(true)}
-                style={{ color: 'var(--text-muted)' }}
-              >
-                <Plus size={14} />
-              </button>
+      <PanelGroup direction="horizontal">
+        <Panel defaultSize={20} minSize={10} maxSize={40} collapsible={true} >
+          <aside className="sidebar glass-panel" style={{ height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--bg-primary)' }}>
+            <div style={{ padding: '16px', borderBottom: '1px solid var(--border-color)' }}>
+              <h1 style={{ fontSize: '1.2rem', fontWeight: 600, letterSpacing: '-0.02em', background: 'linear-gradient(to right, #fff, #a0a6b5)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>API360</h1>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '12px' }}>
-              {collections.map(col => (
-                <div key={col.id}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-primary)', fontWeight: 500, padding: '6px 0' }}>
-                    <Folder size={14} color="var(--accent-blue)" /> <span className="text-truncate">{col.name}</span>
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', paddingLeft: '20px', marginTop: '4px' }}>
-                    {savedRequests.filter(r => r.collectionId === col.id).map(r => (
-                      <div
-                        key={r.id}
-                        onClick={() => {
-                          setMethod(r.method);
-                          setUrl(r.url);
-                          setHeaders(r.headers.length ? r.headers : [{ key: '', value: '', enabled: true }]);
-                          setParams(r.params.length ? r.params : [{ key: '', value: '', enabled: true }]);
-                          if (r.body) setReqBody(r.body);
-                        }}
-                        style={{ padding: '6px 8px', background: 'var(--bg-tertiary)', borderRadius: '6px', border: '1px solid transparent', color: 'var(--text-primary)', cursor: 'pointer', fontSize: '0.8rem' }}
-                        className="text-truncate"
-                        onMouseEnter={(e) => e.currentTarget.style.borderColor = 'var(--accent-blue)'}
-                        onMouseLeave={(e) => e.currentTarget.style.borderColor = 'transparent'}
-                      >
-                        <span style={{ color: `var(--method-${r.method.toLowerCase()})`, fontWeight: 600, marginRight: '6px' }}>{r.method}</span>
-                        {r.name}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div style={{ padding: '16px', borderTop: '1px solid var(--border-color)', color: 'var(--text-muted)', fontSize: '0.875rem' }}>
-            History
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '12px' }}>
-              {history.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '16px', color: 'var(--border-highlight)' }}>No history yet</div>
-              ) : (
-                history.map(item => (
-                  <div
-                    key={item.id}
-                    onClick={() => {
-                      setMethod(item.method);
-                      setUrl(item.url);
-                    }}
-                    style={{
-                      padding: '8px',
-                      background: 'var(--bg-tertiary)',
-                      borderRadius: '6px',
-                      border: '1px solid var(--border-color)',
-                      color: 'var(--text-primary)',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s',
-                    }}
-                    className="text-truncate history-item"
-                    onMouseEnter={(e) => e.currentTarget.style.borderColor = 'var(--accent-blue)'}
-                    onMouseLeave={(e) => e.currentTarget.style.borderColor = 'var(--border-color)'}
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
+              <div style={{ padding: '16px', color: 'var(--text-muted)', fontSize: '0.875rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>Collections</span>
+                  <button
+                    onClick={() => setIsCollectionModalOpen(true)}
+                    style={{ color: 'var(--text-muted)' }}
                   >
-                    <span style={{ color: `var(--method-${item.method.toLowerCase()})`, fontWeight: 600, marginRight: '8px' }}>{item.method}</span>
-                    {item.url}
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        </div>
-      </aside>
-
-      <main style={{ flex: 1, display: 'flex', flexDirection: 'column', backgroundColor: 'var(--bg-primary)', overflow: 'hidden' }}>
-
-        <div style={{ display: 'flex', background: 'var(--bg-tertiary)', borderBottom: '1px solid var(--border-color)', overflowX: 'auto', WebkitAppRegion: 'drag' } as React.CSSProperties}>
-          {workspaceTabs.map(tab => (
-            <div
-              key={tab.id}
-              onClick={() => setActiveTabId(tab.id)}
-              style={{
-                padding: '8px 16px',
-                minWidth: '150px',
-                maxWidth: '200px',
-                borderRight: '1px solid var(--border-color)',
-                backgroundColor: tab.id === activeTabId ? 'var(--bg-primary)' : 'transparent',
-                color: tab.id === activeTabId ? 'var(--text-primary)' : 'var(--text-muted)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                cursor: 'pointer',
-                fontSize: '0.85rem',
-                borderTop: tab.id === activeTabId ? '2px solid var(--accent-blue)' : '2px solid transparent'
-              }}
-            >
-              <div className="text-truncate" style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '6px' }} title={tab.name}>
-                <span style={{ color: `var(--method-${tab.method.toLowerCase()})`, fontWeight: 600, fontSize: '0.75rem' }}>{tab.method}</span>
-                {tab.name}
+                    <Plus size={14} />
+                  </button>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '12px' }}>
+                  {collections.map(col => (
+                    <div key={col.id}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-primary)', fontWeight: 500, padding: '6px 0' }}>
+                        <Folder size={14} color="var(--accent-blue)" /> <span className="text-truncate">{col.name}</span>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', paddingLeft: '20px', marginTop: '4px' }}>
+                        {savedRequests.filter(r => r.collectionId === col.id).map(r => (
+                          <div
+                            key={r.id}
+                            onClick={() => {
+                              setMethod(r.method);
+                              setUrl(r.url);
+                              setHeaders(r.headers.length ? r.headers : [{ key: '', value: '', enabled: true }]);
+                              setParams(r.params.length ? r.params : [{ key: '', value: '', enabled: true }]);
+                              if (r.body) setReqBody(r.body);
+                            }}
+                            style={{ padding: '6px 8px', background: 'var(--bg-tertiary)', borderRadius: '6px', border: '1px solid transparent', color: 'var(--text-primary)', cursor: 'pointer', fontSize: '0.8rem' }}
+                            className="text-truncate"
+                            onMouseEnter={(e) => e.currentTarget.style.borderColor = 'var(--accent-blue)'}
+                            onMouseLeave={(e) => e.currentTarget.style.borderColor = 'transparent'}
+                          >
+                            <span style={{ color: `var(--method-${r.method.toLowerCase()})`, fontWeight: 600, marginRight: '6px' }}>{r.method}</span>
+                            {r.name}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
+              <div style={{ padding: '16px', borderTop: '1px solid var(--border-color)', color: 'var(--text-muted)', fontSize: '0.875rem' }}>
+                History
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '12px' }}>
+                  {history.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '16px', color: 'var(--border-highlight)' }}>No history yet</div>
+                  ) : (
+                    history.map(item => (
+                      <div
+                        key={item.id}
+                        onClick={() => {
+                          setMethod(item.method);
+                          setUrl(item.url);
+                        }}
+                        style={{
+                          padding: '8px',
+                          background: 'var(--bg-tertiary)',
+                          borderRadius: '6px',
+                          border: '1px solid var(--border-color)',
+                          color: 'var(--text-primary)',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s',
+                        }}
+                        className="text-truncate history-item"
+                        onMouseEnter={(e) => e.currentTarget.style.borderColor = 'var(--accent-blue)'}
+                        onMouseLeave={(e) => e.currentTarget.style.borderColor = 'var(--border-color)'}
+                      >
+                        <span style={{ color: `var(--method-${item.method.toLowerCase()})`, fontWeight: 600, marginRight: '8px' }}>{item.method}</span>
+                        {item.url}
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+          </aside>
+        </Panel>
+
+        <PanelResizeHandle className="resize-handle-vertical" style={{ width: '4px', cursor: 'col-resize', background: 'transparent' }}>
+          <div style={{ width: '1px', height: '100%', background: 'var(--border-color)', margin: '0 auto' }} />
+        </PanelResizeHandle>
+
+        <Panel minSize={30}>
+          <main style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', backgroundColor: 'var(--bg-primary)', overflow: 'hidden' }}>
+
+            <div style={{ display: 'flex', background: 'var(--bg-tertiary)', borderBottom: '1px solid var(--border-color)', overflowX: 'auto', WebkitAppRegion: 'drag' } as React.CSSProperties}>
+              {workspaceTabs.map(tab => (
+                <div
+                  key={tab.id}
+                  onClick={() => setActiveTabId(tab.id)}
+                  style={{
+                    padding: '8px 16px',
+                    minWidth: '150px',
+                    maxWidth: '200px',
+                    borderRight: '1px solid var(--border-color)',
+                    backgroundColor: tab.id === activeTabId ? 'var(--bg-primary)' : 'transparent',
+                    color: tab.id === activeTabId ? 'var(--text-primary)' : 'var(--text-muted)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    cursor: 'pointer',
+                    fontSize: '0.85rem',
+                    borderTop: tab.id === activeTabId ? '2px solid var(--accent-blue)' : '2px solid transparent'
+                  }}
+                >
+                  <div className="text-truncate" style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '6px' }} title={tab.name}>
+                    <span style={{ color: `var(--method-${tab.method.toLowerCase()})`, fontWeight: 600, fontSize: '0.75rem' }}>{tab.method}</span>
+                    {tab.name}
+                  </div>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const newTabs = workspaceTabs.filter(t => t.id !== tab.id);
+                      if (newTabs.length === 0) newTabs.push(defaultTab());
+                      setWorkspaceTabs(newTabs);
+                      if (tab.id === activeTabId) setActiveTabId(newTabs[newTabs.length - 1].id);
+                    }}
+                    style={{ color: 'var(--text-muted)', padding: '2px', borderRadius: '4px', marginLeft: '6px' }}
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              ))}
               <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  const newTabs = workspaceTabs.filter(t => t.id !== tab.id);
-                  if (newTabs.length === 0) newTabs.push(defaultTab());
-                  setWorkspaceTabs(newTabs);
-                  if (tab.id === activeTabId) setActiveTabId(newTabs[newTabs.length - 1].id);
+                onClick={() => {
+                  const newTab = defaultTab();
+                  setWorkspaceTabs([...workspaceTabs, newTab]);
+                  setActiveTabId(newTab.id);
                 }}
-                style={{ color: 'var(--text-muted)', padding: '2px', borderRadius: '4px', marginLeft: '6px' }}
+                style={{ padding: '8px 16px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
               >
-                <X size={14} />
+                <Plus size={16} />
               </button>
             </div>
-          ))}
-          <button
-            onClick={() => {
-              const newTab = defaultTab();
-              setWorkspaceTabs([...workspaceTabs, newTab]);
-              setActiveTabId(newTab.id);
-            }}
-            style={{ padding: '8px 16px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-          >
-            <Plus size={16} />
-          </button>
-        </div>
 
-        <div className="glass-panel" style={{ padding: '16px', borderBottom: '1px solid var(--border-color)', display: 'flex', gap: '8px', zIndex: 10 }}>
-          <div style={{ display: 'flex', flex: 1, background: 'var(--bg-secondary)', borderRadius: '8px', border: '1px solid var(--border-color)', overflow: 'hidden', padding: '4px', boxShadow: 'var(--shadow-sm)' }}>
-            <select
-              value={method}
-              onChange={e => setMethod(e.target.value)}
-              style={{ background: 'transparent', border: 'none', color: `var(--method-${method.toLowerCase()})`, fontWeight: 600, padding: '0 12px', cursor: 'pointer' }}
-            >
-              <option value="GET">GET</option>
-              <option value="POST">POST</option>
-              <option value="PUT">PUT</option>
-              <option value="PATCH">PATCH</option>
-              <option value="DELETE">DELETE</option>
-              <option value="WS">WS</option>
-              <option value="WSS">WSS</option>
-            </select>
-            <div style={{ width: '1px', background: 'var(--border-color)', margin: '4px 0' }}></div>
-            <input
-              type="text"
-              placeholder={['WS', 'WSS'].includes(method) ? "Enter WebSocket URL (e.g. wss://echo.websocket.org)" : "Enter request URL"}
-              value={url}
-              onChange={e => setUrl(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && (['WS', 'WSS'].includes(method) ? toggleWebSocket() : sendRequest())}
-              style={{ flex: 1, background: 'transparent', border: 'none', color: 'var(--text-primary)', padding: '0 12px', fontSize: '0.95rem' }}
-            />
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <select
-              value={activeEnvId}
-              onChange={e => setActiveEnvId(e.target.value)}
-              style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '6px 12px', borderRadius: '8px', fontSize: '0.85rem', cursor: 'pointer', maxWidth: '140px' }}
-              title="Active Environment"
-            >
-              {environments.map(env => (
-                <option key={env.id} value={env.id}>{env.name}</option>
-              ))}
-            </select>
-            <button
-              onClick={() => setIsEnvModalOpen(true)}
-              style={{ width: '32px', height: '32px', background: 'var(--bg-secondary)', color: 'var(--text-muted)', border: '1px solid var(--border-color)', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-              title="Manage Environments"
-            >
-              <Folder size={16} />
-            </button>
-          </div>
-
-          <button
-            onClick={() => setIsSaveModalOpen(true)}
-            style={{ minWidth: '80px', background: 'var(--bg-tertiary)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', padding: '0 16px', borderRadius: '8px', fontWeight: 500, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
-          >
-            <Save size={16} /> Save
-          </button>
-
-          {['WS', 'WSS'].includes(method) ? (
-            <button
-              onClick={() => toggleWebSocket()}
-              disabled={wsStatus === 'CONNECTING'}
-              style={{ minWidth: '120px', background: wsStatus === 'CONNECTED' ? 'var(--status-error)' : 'var(--status-success)', color: '#fff', padding: '0 20px', borderRadius: '8px', fontWeight: 500, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', opacity: wsStatus === 'CONNECTING' ? 0.7 : 1 }}
-            >
-              {wsStatus === 'CONNECTING' ? <Loader2 size={16} className="lucide-spin" /> : <><Play size={16} fill="currentColor" /> {wsStatus === 'CONNECTED' ? 'Disconnect' : 'Connect'}</>}
-            </button>
-          ) : (
-            <button
-              onClick={sendRequest}
-              disabled={loading}
-              style={{ minWidth: '100px', background: 'var(--accent-blue)', color: '#fff', padding: '0 20px', borderRadius: '8px', fontWeight: 500, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', boxShadow: 'var(--accent-blue-glow) 0 4px 12px -2px', opacity: loading ? 0.7 : 1 }}
-            >
-              {loading ? <Loader2 size={16} className="lucide-spin" /> : <><Play size={16} fill="currentColor" /> Send</>}
-            </button>
-          )}
-        </div>
-
-        <div style={{ display: 'flex', flex: 1, overflow: 'hidden', flexDirection: 'column', height: '100%' }}>
-
-          <div style={{ flex: 1, borderBottom: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column' }}>
-            <div style={{ display: 'flex', gap: '2px', padding: '0 16px', borderBottom: '1px solid var(--border-color)', background: 'var(--bg-secondary)' }}>
-              {tabs.map(tab => (
-                <div
-                  key={tab}
-                  onClick={() => setActiveTab(tab)}
-                  style={{ padding: '12px 16px', color: tab === activeTab ? 'var(--text-primary)' : 'var(--text-muted)', borderBottom: tab === activeTab ? '2px solid var(--accent-blue)' : '2px solid transparent', cursor: 'pointer', fontSize: '0.875rem', fontWeight: 500, transition: 'all 0.2s' }}
+            <div className="glass-panel" style={{ padding: '16px', borderBottom: '1px solid var(--border-color)', display: 'flex', gap: '8px', zIndex: 10 }}>
+              <div style={{ display: 'flex', flex: 1, background: 'var(--bg-secondary)', borderRadius: '8px', border: '1px solid var(--border-color)', overflow: 'hidden', padding: '4px', boxShadow: 'var(--shadow-sm)' }}>
+                <select
+                  value={method}
+                  onChange={e => setMethod(e.target.value)}
+                  style={{ background: 'transparent', border: 'none', color: `var(--method-${method.toLowerCase()})`, fontWeight: 600, padding: '0 12px', cursor: 'pointer' }}
                 >
-                  {tab}
-                </div>
-              ))}
+                  <option value="GET">GET</option>
+                  <option value="POST">POST</option>
+                  <option value="PUT">PUT</option>
+                  <option value="PATCH">PATCH</option>
+                  <option value="DELETE">DELETE</option>
+                  <option value="WS">WS</option>
+                  <option value="WSS">WSS</option>
+                </select>
+                <div style={{ width: '1px', background: 'var(--border-color)', margin: '4px 0' }}></div>
+                <input
+                  type="text"
+                  placeholder={['WS', 'WSS'].includes(method) ? "Enter WebSocket URL (e.g. wss://echo.websocket.org)" : "Enter request URL"}
+                  value={url}
+                  onChange={e => setUrl(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && (['WS', 'WSS'].includes(method) ? toggleWebSocket() : sendRequest())}
+                  style={{ flex: 1, background: 'transparent', border: 'none', color: 'var(--text-primary)', padding: '0 12px', fontSize: '0.95rem' }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <select
+                  value={activeEnvId}
+                  onChange={e => setActiveEnvId(e.target.value)}
+                  style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '6px 12px', borderRadius: '8px', fontSize: '0.85rem', cursor: 'pointer', maxWidth: '140px' }}
+                  title="Active Environment"
+                >
+                  {environments.map(env => (
+                    <option key={env.id} value={env.id}>{env.name}</option>
+                  ))}
+                </select>
+                <button
+                  onClick={() => setIsEnvModalOpen(true)}
+                  style={{ width: '32px', height: '32px', background: 'var(--bg-secondary)', color: 'var(--text-muted)', border: '1px solid var(--border-color)', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  title="Manage Environments"
+                >
+                  <Folder size={16} />
+                </button>
+              </div>
+
+              <button
+                onClick={() => setIsSaveModalOpen(true)}
+                style={{ minWidth: '80px', background: 'var(--bg-tertiary)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', padding: '0 16px', borderRadius: '8px', fontWeight: 500, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+              >
+                <Save size={16} /> Save
+              </button>
+
+              {['WS', 'WSS'].includes(method) ? (
+                <button
+                  onClick={() => toggleWebSocket()}
+                  disabled={wsStatus === 'CONNECTING'}
+                  style={{ minWidth: '120px', background: wsStatus === 'CONNECTED' ? 'var(--status-error)' : 'var(--status-success)', color: '#fff', padding: '0 20px', borderRadius: '8px', fontWeight: 500, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', opacity: wsStatus === 'CONNECTING' ? 0.7 : 1 }}
+                >
+                  {wsStatus === 'CONNECTING' ? <Loader2 size={16} className="lucide-spin" /> : <><Play size={16} fill="currentColor" /> {wsStatus === 'CONNECTED' ? 'Disconnect' : 'Connect'}</>}
+                </button>
+              ) : (
+                <button
+                  onClick={sendRequest}
+                  disabled={loading}
+                  style={{ minWidth: '100px', background: 'var(--accent-blue)', color: '#fff', padding: '0 20px', borderRadius: '8px', fontWeight: 500, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', boxShadow: 'var(--accent-blue-glow) 0 4px 12px -2px', opacity: loading ? 0.7 : 1 }}
+                >
+                  {loading ? <Loader2 size={16} className="lucide-spin" /> : <><Play size={16} fill="currentColor" /> Send</>}
+                </button>
+              )}
             </div>
 
-            <div style={{ flex: 1, position: 'relative', overflowY: 'auto' }}>
-              {activeTab === 'Params' && (
-                <KeyValueEditor items={params} onChange={handleParamsChange} placeholderKey="Query Param Key" />
-              )}
-              {activeTab === 'Headers' && (
-                <KeyValueEditor items={headers} onChange={setHeaders} placeholderKey="Header Name" />
-              )}
-              {activeTab === 'Auth' && (
-                <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                    <label style={{ color: 'var(--text-muted)', fontSize: '0.9rem', width: '80px' }}>Auth Type</label>
-                    <select
-                      value={authType}
-                      onChange={e => setAuthType(e.target.value)}
-                      style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '8px 12px', borderRadius: '6px', fontSize: '0.9rem', width: '200px' }}
+            <PanelGroup direction="vertical">
+              <Panel style={{ flex: 1, borderBottom: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column' }}>
+                <div style={{ display: 'flex', gap: '2px', padding: '0 16px', borderBottom: '1px solid var(--border-color)', background: 'var(--bg-secondary)' }}>
+                  {tabs.map(tab => (
+                    <div
+                      key={tab}
+                      onClick={() => setActiveTab(tab)}
+                      style={{ padding: '12px 16px', color: tab === activeTab ? 'var(--text-primary)' : 'var(--text-muted)', borderBottom: tab === activeTab ? '2px solid var(--accent-blue)' : '2px solid transparent', cursor: 'pointer', fontSize: '0.875rem', fontWeight: 500, transition: 'all 0.2s' }}
                     >
-                      <option value="None">None</option>
-                      <option value="Bearer Token">Bearer Token</option>
-                      <option value="Basic Auth">Basic Auth</option>
-                    </select>
-                  </div>
-                  {authType === 'Bearer Token' && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                      <label style={{ color: 'var(--text-muted)', fontSize: '0.9rem', width: '80px' }}>Token</label>
-                      <input
-                        type="text"
-                        placeholder="Enter token"
-                        value={bearerToken}
-                        onChange={e => setBearerToken(e.target.value)}
-                        style={{ flex: 1, maxWidth: '400px', background: 'var(--bg-primary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '8px 12px', borderRadius: '6px', fontSize: '0.9rem' }}
-                      />
+                      {tab}
                     </div>
-                  )}
-                  {authType === 'Basic Auth' && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                        <label style={{ color: 'var(--text-muted)', fontSize: '0.9rem', width: '80px' }}>Username</label>
-                        <input
-                          type="text"
-                          placeholder="Username"
-                          value={basicAuthUser}
-                          onChange={e => setBasicAuthUser(e.target.value)}
-                          style={{ flex: 1, maxWidth: '400px', background: 'var(--bg-primary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '8px 12px', borderRadius: '6px', fontSize: '0.9rem' }}
-                        />
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                        <label style={{ color: 'var(--text-muted)', fontSize: '0.9rem', width: '80px' }}>Password</label>
-                        <input
-                          type="password"
-                          placeholder="Password"
-                          value={basicAuthPass}
-                          onChange={e => setBasicAuthPass(e.target.value)}
-                          style={{ flex: 1, maxWidth: '400px', background: 'var(--bg-primary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '8px 12px', borderRadius: '6px', fontSize: '0.9rem' }}
-                        />
-                      </div>
-                    </div>
-                  )}
+                  ))}
                 </div>
-              )}
-              {activeTab === 'Body' && (
-                <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                  <div style={{ padding: '8px 16px', borderBottom: '1px solid var(--border-color)', background: 'var(--bg-tertiary)', display: 'flex', gap: '16px' }}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-primary)', cursor: 'pointer', fontSize: '0.85rem' }}>
-                      <input type="radio" name={`bodyType-${activeTabId}`} checked={bodyType === 'json'} onChange={() => setBodyType('json')} /> Raw JSON
-                    </label>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-primary)', cursor: 'pointer', fontSize: '0.85rem' }}>
-                      <input type="radio" name={`bodyType-${activeTabId}`} checked={bodyType === 'graphql'} onChange={() => { setBodyType('graphql'); setMethod('POST'); }} /> GraphQL
-                    </label>
-                  </div>
-                  <div style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column' }}>
-                    {bodyType === 'json' ? (
-                      <Editor
-                        height="100%"
-                        defaultLanguage="json"
-                        theme="vs-dark"
-                        value={reqBody}
-                        onChange={(val) => setReqBody(val || '')}
-                        options={{ minimap: { enabled: false }, fontSize: 13, wordWrap: 'on', padding: { top: 16 } }}
-                      />
-                    ) : (
-                      <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                        <div style={{ flex: 2, borderBottom: '1px solid var(--border-color)', position: 'relative' }}>
-                          <div style={{ position: 'absolute', top: 0, right: 16, zIndex: 10, padding: '4px', background: 'var(--bg-tertiary)', borderBottomLeftRadius: '6px', borderBottomRightRadius: '6px', fontSize: '0.7rem', color: 'var(--text-muted)' }}>QUERY</div>
-                          <Editor
-                            height="100%"
-                            defaultLanguage="graphql"
-                            theme="vs-dark"
-                            value={graphqlQuery}
-                            onChange={(val) => setGraphqlQuery(val || '')}
-                            options={{ minimap: { enabled: false }, fontSize: 13, padding: { top: 16 } }}
+
+                <div style={{ flex: 1, position: 'relative', overflowY: 'auto' }}>
+                  {activeTab === 'Params' && (
+                    <KeyValueEditor items={params} onChange={handleParamsChange} placeholderKey="Query Param Key" />
+                  )}
+                  {activeTab === 'Headers' && (
+                    <KeyValueEditor items={headers} onChange={setHeaders} placeholderKey="Header Name" />
+                  )}
+                  {activeTab === 'Auth' && (
+                    <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                        <label style={{ color: 'var(--text-muted)', fontSize: '0.9rem', width: '80px' }}>Auth Type</label>
+                        <select
+                          value={authType}
+                          onChange={e => setAuthType(e.target.value)}
+                          style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '8px 12px', borderRadius: '6px', fontSize: '0.9rem', width: '200px' }}
+                        >
+                          <option value="None">None</option>
+                          <option value="Bearer Token">Bearer Token</option>
+                          <option value="Basic Auth">Basic Auth</option>
+                        </select>
+                      </div>
+                      {authType === 'Bearer Token' && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                          <label style={{ color: 'var(--text-muted)', fontSize: '0.9rem', width: '80px' }}>Token</label>
+                          <input
+                            type="text"
+                            placeholder="Enter token"
+                            value={bearerToken}
+                            onChange={e => setBearerToken(e.target.value)}
+                            style={{ flex: 1, maxWidth: '400px', background: 'var(--bg-primary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '8px 12px', borderRadius: '6px', fontSize: '0.9rem' }}
                           />
                         </div>
-                        <div style={{ padding: '6px 16px', background: 'var(--bg-secondary)', fontSize: '0.75rem', color: 'var(--text-primary)', borderBottom: '1px solid var(--border-color)', fontWeight: 600, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <span>GRAPHQL VARIABLES</span>
+                      )}
+                      {authType === 'Basic Auth' && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                            <label style={{ color: 'var(--text-muted)', fontSize: '0.9rem', width: '80px' }}>Username</label>
+                            <input
+                              type="text"
+                              placeholder="Username"
+                              value={basicAuthUser}
+                              onChange={e => setBasicAuthUser(e.target.value)}
+                              style={{ flex: 1, maxWidth: '400px', background: 'var(--bg-primary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '8px 12px', borderRadius: '6px', fontSize: '0.9rem' }}
+                            />
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                            <label style={{ color: 'var(--text-muted)', fontSize: '0.9rem', width: '80px' }}>Password</label>
+                            <input
+                              type="password"
+                              placeholder="Password"
+                              value={basicAuthPass}
+                              onChange={e => setBasicAuthPass(e.target.value)}
+                              style={{ flex: 1, maxWidth: '400px', background: 'var(--bg-primary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '8px 12px', borderRadius: '6px', fontSize: '0.9rem' }}
+                            />
+                          </div>
                         </div>
-                        <div style={{ flex: 1 }}>
+                      )}
+                    </div>
+                  )}
+                  {activeTab === 'Body' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                      <div style={{ padding: '8px 16px', borderBottom: '1px solid var(--border-color)', background: 'var(--bg-tertiary)', display: 'flex', gap: '16px' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-primary)', cursor: 'pointer', fontSize: '0.85rem' }}>
+                          <input type="radio" name={`bodyType-${activeTabId}`} checked={bodyType === 'json'} onChange={() => setBodyType('json')} /> Raw JSON
+                        </label>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-primary)', cursor: 'pointer', fontSize: '0.85rem' }}>
+                          <input type="radio" name={`bodyType-${activeTabId}`} checked={bodyType === 'graphql'} onChange={() => { setBodyType('graphql'); setMethod('POST'); }} /> GraphQL
+                        </label>
+                      </div>
+                      <div style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column' }}>
+                        {bodyType === 'json' ? (
                           <Editor
                             height="100%"
                             defaultLanguage="json"
                             theme="vs-dark"
-                            value={graphqlVariables}
-                            onChange={(val) => setGraphqlVariables(val || '')}
-                            options={{ minimap: { enabled: false }, fontSize: 13, padding: { top: 8 } }}
+                            value={reqBody}
+                            onChange={(val) => setReqBody(val || '')}
+                            options={{ minimap: { enabled: false }, fontSize: 13, wordWrap: 'on', padding: { top: 16 } }}
+                          />
+                        ) : (
+                          <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                            <div style={{ flex: 2, borderBottom: '1px solid var(--border-color)', position: 'relative' }}>
+                              <div style={{ position: 'absolute', top: 0, right: 16, zIndex: 10, padding: '4px', background: 'var(--bg-tertiary)', borderBottomLeftRadius: '6px', borderBottomRightRadius: '6px', fontSize: '0.7rem', color: 'var(--text-muted)' }}>QUERY</div>
+                              <Editor
+                                height="100%"
+                                defaultLanguage="graphql"
+                                theme="vs-dark"
+                                value={graphqlQuery}
+                                onChange={(val) => setGraphqlQuery(val || '')}
+                                options={{ minimap: { enabled: false }, fontSize: 13, padding: { top: 16 } }}
+                              />
+                            </div>
+                            <div style={{ padding: '6px 16px', background: 'var(--bg-secondary)', fontSize: '0.75rem', color: 'var(--text-primary)', borderBottom: '1px solid var(--border-color)', fontWeight: 600, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <span>GRAPHQL VARIABLES</span>
+                            </div>
+                            <div style={{ flex: 1 }}>
+                              <Editor
+                                height="100%"
+                                defaultLanguage="json"
+                                theme="vs-dark"
+                                value={graphqlVariables}
+                                onChange={(val) => setGraphqlVariables(val || '')}
+                                options={{ minimap: { enabled: false }, fontSize: 13, padding: { top: 8 } }}
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  {activeTab === 'Scripts' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                      <div style={{ padding: '8px 16px', background: 'var(--bg-secondary)', fontSize: '0.75rem', color: 'var(--text-primary)', borderBottom: '1px solid var(--border-color)', fontWeight: 600 }}>
+                        PRE-REQUEST SCRIPT
+                      </div>
+                      <div style={{ flex: 1, position: 'relative' }}>
+                        <Editor
+                          height="100%"
+                          defaultLanguage="javascript"
+                          theme="vs-dark"
+                          value={preScript}
+                          onChange={(val) => setPreScript(val || '')}
+                          options={{ minimap: { enabled: false }, fontSize: 13, padding: { top: 8 } }}
+                        />
+                      </div>
+                      <div style={{ padding: '8px 16px', background: 'var(--bg-secondary)', fontSize: '0.75rem', color: 'var(--text-primary)', borderTop: '1px solid var(--border-color)', borderBottom: '1px solid var(--border-color)', fontWeight: 600 }}>
+                        POST-REQUEST SCRIPT
+                      </div>
+                      <div style={{ flex: 1, position: 'relative' }}>
+                        <Editor
+                          height="100%"
+                          defaultLanguage="javascript"
+                          theme="vs-dark"
+                          value={postScript}
+                          onChange={(val) => setPostScript(val || '')}
+                          options={{ minimap: { enabled: false }, fontSize: 13, padding: { top: 8 } }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                  {activeTab === 'Contract' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                      <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', background: 'var(--bg-tertiary)', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                        Define the expected JSON Schema for this endpoint. Validation runs automatically on Send.
+                      </div>
+                      <div style={{ flex: 1, position: 'relative' }}>
+                        <Editor
+                          height="100%"
+                          defaultLanguage="json"
+                          theme="vs-dark"
+                          value={contract}
+                          onChange={(val) => setContract(val || '')}
+                          options={{ minimap: { enabled: false }, fontSize: 13, wordWrap: 'on', padding: { top: 16 } }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                  {activeTab === 'Message' && (
+                    <div style={{ padding: '0', display: 'flex', flexDirection: 'column', height: '100%', gap: '16px', borderTop: '0' }}>
+                      <div style={{ padding: '16px', background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)', display: 'flex', gap: '8px' }}>
+                        <div style={{ flex: 1, height: '150px', border: '1px solid var(--border-color)', borderRadius: '8px', overflow: 'hidden' }}>
+                          <Editor
+                            height="100%"
+                            language="json"
+                            theme="vs-dark"
+                            value={wsMessageInput}
+                            onChange={(val) => setWsMessageInput(val || '')}
+                            options={{ minimap: { enabled: false }, scrollBeyondLastLine: false, fontSize: 13 }}
                           />
                         </div>
+                        <button
+                          onClick={sendWsMessage}
+                          disabled={wsStatus !== 'CONNECTED'}
+                          style={{ padding: '0 24px', background: 'var(--accent-blue)', color: '#fff', borderRadius: '8px', fontWeight: 600, opacity: wsStatus !== 'CONNECTED' ? 0.5 : 1 }}
+                        >
+                          Send Message
+                        </button>
                       </div>
-                    )}
-                  </div>
-                </div>
-              )}
-              {activeTab === 'Scripts' && (
-                <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                  <div style={{ padding: '8px 16px', background: 'var(--bg-secondary)', fontSize: '0.75rem', color: 'var(--text-primary)', borderBottom: '1px solid var(--border-color)', fontWeight: 600 }}>
-                    PRE-REQUEST SCRIPT
-                  </div>
-                  <div style={{ flex: 1, position: 'relative' }}>
-                    <Editor
-                      height="100%"
-                      defaultLanguage="javascript"
-                      theme="vs-dark"
-                      value={preScript}
-                      onChange={(val) => setPreScript(val || '')}
-                      options={{ minimap: { enabled: false }, fontSize: 13, padding: { top: 8 } }}
-                    />
-                  </div>
-                  <div style={{ padding: '8px 16px', background: 'var(--bg-secondary)', fontSize: '0.75rem', color: 'var(--text-primary)', borderTop: '1px solid var(--border-color)', borderBottom: '1px solid var(--border-color)', fontWeight: 600 }}>
-                    POST-REQUEST SCRIPT
-                  </div>
-                  <div style={{ flex: 1, position: 'relative' }}>
-                    <Editor
-                      height="100%"
-                      defaultLanguage="javascript"
-                      theme="vs-dark"
-                      value={postScript}
-                      onChange={(val) => setPostScript(val || '')}
-                      options={{ minimap: { enabled: false }, fontSize: 13, padding: { top: 8 } }}
-                    />
-                  </div>
-                </div>
-              )}
-              {activeTab === 'Contract' && (
-                <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                  <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', background: 'var(--bg-tertiary)', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                    Define the expected JSON Schema for this endpoint. Validation runs automatically on Send.
-                  </div>
-                  <div style={{ flex: 1, position: 'relative' }}>
-                    <Editor
-                      height="100%"
-                      defaultLanguage="json"
-                      theme="vs-dark"
-                      value={contract}
-                      onChange={(val) => setContract(val || '')}
-                      options={{ minimap: { enabled: false }, fontSize: 13, wordWrap: 'on', padding: { top: 16 } }}
-                    />
-                  </div>
-                </div>
-              )}
-              {activeTab === 'Message' && (
-                <div style={{ padding: '0', display: 'flex', flexDirection: 'column', height: '100%', gap: '16px', borderTop: '0' }}>
-                  <div style={{ padding: '16px', background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)', display: 'flex', gap: '8px' }}>
-                    <div style={{ flex: 1, height: '150px', border: '1px solid var(--border-color)', borderRadius: '8px', overflow: 'hidden' }}>
-                      <Editor
-                        height="100%"
-                        language="json"
-                        theme="vs-dark"
-                        value={wsMessageInput}
-                        onChange={(val) => setWsMessageInput(val || '')}
-                        options={{ minimap: { enabled: false }, scrollBeyondLastLine: false, fontSize: 13 }}
-                      />
+
+                      <div style={{ flex: 1, padding: '16px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {wsMessages.length === 0 ? (
+                          <div style={{ color: 'var(--text-muted)', textAlign: 'center', marginTop: '40px', fontSize: '0.9rem' }}>No messages yet. Connect to a WebSocket to start streaming.</div>
+                        ) : (
+                          wsMessages.map(msg => (
+                            <div key={msg.id} style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignSelf: msg.type === 'sent' ? 'flex-end' : 'flex-start', maxWidth: '85%' }}>
+                              <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', alignSelf: msg.type === 'sent' ? 'flex-end' : 'flex-start' }}>
+                                {msg.type.toUpperCase()} • {new Date(msg.timestamp).toLocaleTimeString()}
+                              </span>
+                              <div style={{
+                                padding: '8px 12px',
+                                borderRadius: '8px',
+                                fontFamily: 'monospace',
+                                fontSize: '0.85rem',
+                                whiteSpace: 'pre-wrap',
+                                wordBreak: 'break-all',
+                                background: msg.type === 'sent' ? 'var(--accent-blue)' : msg.type === 'received' ? 'var(--bg-primary)' : msg.type === 'error' ? 'var(--status-error)' : 'var(--bg-tertiary)',
+                                color: msg.type === 'info' ? 'var(--text-muted)' : '#fff',
+                                border: msg.type === 'received' ? '1px solid var(--border-color)' : 'none'
+                              }}>
+                                {msg.data}
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
                     </div>
-                    <button
-                      onClick={sendWsMessage}
-                      disabled={wsStatus !== 'CONNECTED'}
-                      style={{ padding: '0 24px', background: 'var(--accent-blue)', color: '#fff', borderRadius: '8px', fontWeight: 600, opacity: wsStatus !== 'CONNECTED' ? 0.5 : 1 }}
-                    >
-                      Send Message
-                    </button>
-                  </div>
+                  )}
+                </div>
+              </Panel>
 
-                  <div style={{ flex: 1, padding: '16px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    {wsMessages.length === 0 ? (
-                      <div style={{ color: 'var(--text-muted)', textAlign: 'center', marginTop: '40px', fontSize: '0.9rem' }}>No messages yet. Connect to a WebSocket to start streaming.</div>
-                    ) : (
-                      wsMessages.map(msg => (
-                        <div key={msg.id} style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignSelf: msg.type === 'sent' ? 'flex-end' : 'flex-start', maxWidth: '85%' }}>
-                          <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', alignSelf: msg.type === 'sent' ? 'flex-end' : 'flex-start' }}>
-                            {msg.type.toUpperCase()} • {new Date(msg.timestamp).toLocaleTimeString()}
-                          </span>
-                          <div style={{
-                            padding: '8px 12px',
-                            borderRadius: '8px',
-                            fontFamily: 'monospace',
-                            fontSize: '0.85rem',
-                            whiteSpace: 'pre-wrap',
-                            wordBreak: 'break-all',
-                            background: msg.type === 'sent' ? 'var(--accent-blue)' : msg.type === 'received' ? 'var(--bg-primary)' : msg.type === 'error' ? 'var(--status-error)' : 'var(--bg-tertiary)',
-                            color: msg.type === 'info' ? 'var(--text-muted)' : '#fff',
-                            border: msg.type === 'received' ? '1px solid var(--border-color)' : 'none'
-                          }}>
-                            {msg.data}
-                          </div>
+              {!['WS', 'WSS'].includes(method) && (
+                <>
+                  <PanelResizeHandle className="resize-handle-horizontal" style={{ height: '4px', cursor: 'row-resize', background: 'transparent' }}>
+                    <div style={{ height: '1px', width: '100%', background: 'var(--border-color)', margin: 'auto 0' }} />
+                  </PanelResizeHandle>
+
+                  <Panel defaultSize={50} minSize={20}>
+                    <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--bg-secondary)' }}>
+                      <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', display: 'flex', gap: '24px', fontSize: '0.875rem', background: 'var(--bg-tertiary)' }}>
+                        {respStatus === 0 ? (
+                          <span style={{ color: 'var(--text-muted)' }}>No Response</span>
+                        ) : (
+                          <>
+                            <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>Status: <span style={{ color: getStatusColor(respStatus), fontWeight: 600 }}>{respStatus}</span></span>
+                            <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>Time: <span style={{ color: 'var(--text-primary)' }}>{respTime}ms</span></span>
+                            <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>Size: <span style={{ color: 'var(--text-primary)' }}>{(respSize / 1024).toFixed(2)} KB</span></span>
+
+                            {testResults.length > 0 && (
+                              <span style={{
+                                marginLeft: !contractResult ? 'auto' : '10px',
+                                background: testResults.every(t => t.passed) ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                                color: testResults.every(t => t.passed) ? 'var(--status-success)' : 'var(--status-error)',
+                                padding: '2px 8px',
+                                borderRadius: '12px',
+                                fontWeight: 600,
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '4px'
+                              }}>
+                                {testResults.every(t => t.passed) ? '✅' : '❌'} {testResults.filter(t => t.passed).length}/{testResults.length} Tests Passed
+                              </span>
+                            )}
+
+                            {contractResult && (
+                              <span style={{
+                                marginLeft: testResults.length > 0 ? '10px' : 'auto',
+                                background: contractResult.passed ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                                color: contractResult.passed ? 'var(--status-success)' : 'var(--status-error)',
+                                padding: '2px 8px',
+                                borderRadius: '12px',
+                                fontWeight: 600,
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '4px'
+                              }}>
+                                {contractResult.passed ? '✅ Contract Passed' : '❌ Contract Failed'}
+                              </span>
+                            )}
+                          </>
+                        )}
+                      </div>
+
+                      {contractResult && !contractResult.passed && (
+                        <div style={{ background: 'rgba(239, 68, 68, 0.05)', borderBottom: '1px solid rgba(239, 68, 68, 0.2)', padding: '12px 16px', color: 'var(--status-error)', fontSize: '0.85rem', whiteSpace: 'pre-wrap', maxHeight: '100px', overflowY: 'auto', fontFamily: 'monospace' }}>
+                          <span style={{ fontWeight: 600, display: 'block', marginBottom: '4px' }}>Validation Errors:</span>
+                          {contractResult.error}
                         </div>
-                      ))
-                    )}
-                  </div>
-                </div>
+                      )}
+
+                      {testResults.some(t => !t.passed) && (
+                        <div style={{ background: 'rgba(239, 68, 68, 0.05)', borderBottom: '1px solid rgba(239, 68, 68, 0.2)', padding: '12px 16px', color: 'var(--status-error)', fontSize: '0.85rem', whiteSpace: 'pre-wrap', maxHeight: '100px', overflowY: 'auto', fontFamily: 'monospace' }}>
+                          <span style={{ fontWeight: 600, display: 'block', marginBottom: '4px' }}>Test Failures:</span>
+                          {testResults.filter(t => !t.passed).map((t, i) => (
+                            <div key={i}>❌ {t.name}: {t.error}</div>
+                          ))}
+                        </div>
+                      )}
+
+                      <div style={{ flex: 1, position: 'relative' }}>
+                        {!response ? (
+                          <div className="flex-center" style={{ height: '100%', color: 'var(--border-highlight)' }}>
+                            {loading ? <Loader2 size={32} className="lucide-spin" /> : 'Hit Send to get a response'}
+                          </div>
+                        ) : (
+                          <Editor
+                            height="100%"
+                            defaultLanguage="json"
+                            language={response && typeof response === 'string' && response.trim().startsWith('<') ? 'html' : 'json'}
+                            theme="vs-dark"
+                            value={response ? (typeof response === 'object' ? JSON.stringify(response, null, 2) : response) : ''}
+                            options={{ minimap: { enabled: false }, readOnly: true, fontSize: 13, wordWrap: 'on', padding: { top: 16 } }}
+                          />
+                        )}
+                      </div>
+                    </div>
+                  </Panel>
+                </>
               )}
-            </div>
-          </div>
-
-          {!['WS', 'WSS'].includes(method) && (
-            <div style={{ flex: 1.2, display: 'flex', flexDirection: 'column', background: 'var(--bg-secondary)' }}>
-              <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', display: 'flex', gap: '24px', fontSize: '0.875rem', background: 'var(--bg-tertiary)' }}>
-                {respStatus === 0 ? (
-                  <span style={{ color: 'var(--text-muted)' }}>No Response</span>
-                ) : (
-                  <>
-                    <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>Status: <span style={{ color: getStatusColor(respStatus), fontWeight: 600 }}>{respStatus}</span></span>
-                    <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>Time: <span style={{ color: 'var(--text-primary)' }}>{respTime}ms</span></span>
-                    <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>Size: <span style={{ color: 'var(--text-primary)' }}>{(respSize / 1024).toFixed(2)} KB</span></span>
-
-                    {testResults.length > 0 && (
-                      <span style={{
-                        marginLeft: !contractResult ? 'auto' : '10px',
-                        background: testResults.every(t => t.passed) ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)',
-                        color: testResults.every(t => t.passed) ? 'var(--status-success)' : 'var(--status-error)',
-                        padding: '2px 8px',
-                        borderRadius: '12px',
-                        fontWeight: 600,
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '4px'
-                      }}>
-                        {testResults.every(t => t.passed) ? '✅' : '❌'} {testResults.filter(t => t.passed).length}/{testResults.length} Tests Passed
-                      </span>
-                    )}
-
-                    {contractResult && (
-                      <span style={{
-                        marginLeft: testResults.length > 0 ? '10px' : 'auto',
-                        background: contractResult.passed ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)',
-                        color: contractResult.passed ? 'var(--status-success)' : 'var(--status-error)',
-                        padding: '2px 8px',
-                        borderRadius: '12px',
-                        fontWeight: 600,
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '4px'
-                      }}>
-                        {contractResult.passed ? '✅ Contract Passed' : '❌ Contract Failed'}
-                      </span>
-                    )}
-                  </>
-                )}
-              </div>
-
-              {contractResult && !contractResult.passed && (
-                <div style={{ background: 'rgba(239, 68, 68, 0.05)', borderBottom: '1px solid rgba(239, 68, 68, 0.2)', padding: '12px 16px', color: 'var(--status-error)', fontSize: '0.85rem', whiteSpace: 'pre-wrap', maxHeight: '100px', overflowY: 'auto', fontFamily: 'monospace' }}>
-                  <span style={{ fontWeight: 600, display: 'block', marginBottom: '4px' }}>Validation Errors:</span>
-                  {contractResult.error}
-                </div>
-              )}
-
-              {testResults.some(t => !t.passed) && (
-                <div style={{ background: 'rgba(239, 68, 68, 0.05)', borderBottom: '1px solid rgba(239, 68, 68, 0.2)', padding: '12px 16px', color: 'var(--status-error)', fontSize: '0.85rem', whiteSpace: 'pre-wrap', maxHeight: '100px', overflowY: 'auto', fontFamily: 'monospace' }}>
-                  <span style={{ fontWeight: 600, display: 'block', marginBottom: '4px' }}>Test Failures:</span>
-                  {testResults.filter(t => !t.passed).map((t, i) => (
-                    <div key={i}>❌ {t.name}: {t.error}</div>
-                  ))}
-                </div>
-              )}
-
-              <div style={{ flex: 1, position: 'relative' }}>
-                {!response ? (
-                  <div className="flex-center" style={{ height: '100%', color: 'var(--border-highlight)' }}>
-                    {loading ? <Loader2 size={32} className="lucide-spin" /> : 'Hit Send to get a response'}
-                  </div>
-                ) : (
-                  <Editor
-                    height="100%"
-                    defaultLanguage="json"
-                    theme="vs-dark"
-                    value={typeof response === 'string' ? response : JSON.stringify(response, null, 2)}
-                    options={{ readOnly: true, minimap: { enabled: false }, fontSize: 13, wordWrap: 'on', padding: { top: 16 } }}
-                  />
-                )}
-              </div>
-            </div>
-          )}
-
-        </div>
-      </main>
+            </PanelGroup>
+          </main>
+        </Panel>
+      </PanelGroup>
 
       {isSaveModalOpen && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
@@ -1170,6 +1187,52 @@ function App() {
           </div>
         </div>
       )
+      }
+
+      {
+        isCollectionModalOpen && (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
+            <div className="glass-panel" style={{ width: '400px', background: 'var(--bg-secondary)', borderRadius: '12px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px', boxShadow: 'var(--shadow-lg)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <button onClick={() => setIsSaveModalOpen(false)} style={{ color: 'var(--text-muted)' }}><X size={20} /></button>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <label style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Name</label>
+                <input value={saveName} onChange={e => setSaveName(e.target.value)} placeholder="e.g. Get User Profile" style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '10px 12px', borderRadius: '6px', fontSize: '0.9rem' }} />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <label style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Collection</label>
+                <select value={saveCollectionId} onChange={e => setSaveCollectionId(e.target.value)} style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '10px 12px', borderRadius: '6px', fontSize: '0.9rem' }}>
+                  {collections.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '8px' }}>
+                <button onClick={() => setIsSaveModalOpen(false)} style={{ padding: '8px 16px', color: 'var(--text-muted)', fontWeight: 500 }}>Cancel</button>
+                <button
+                  onClick={() => {
+                    if (!saveName) return;
+                    const newReq: SavedRequest = {
+                      id: crypto.randomUUID(),
+                      name: saveName,
+                      collectionId: saveCollectionId,
+                      method,
+                      url,
+                      headers: headers.filter(h => h.key),
+                      params: params.filter(p => p.key),
+                      body: reqBody
+                    };
+                    setSavedRequests([...savedRequests, newReq]);
+                    setIsSaveModalOpen(false);
+                    setSaveName('');
+                  }}
+                  style={{ padding: '8px 16px', background: 'var(--accent-blue)', color: '#fff', borderRadius: '6px', fontWeight: 500 }}
+                >
+                  Save
+                </button>
+              </div>
+            </div>
+          </div>
+        )
       }
 
       {
