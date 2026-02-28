@@ -1,9 +1,16 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Play, Loader2, Save, Folder, Plus, X } from 'lucide-react';
 import { KeyValueEditor } from './KeyValueEditor';
 import type { KeyValueStore } from './KeyValueEditor';
 import { useLocalStorage } from './useLocalStorage';
 import Editor from '@monaco-editor/react';
+
+interface WsMessage {
+  id: string;
+  type: 'sent' | 'received' | 'info' | 'error';
+  data: string;
+  timestamp: number;
+}
 
 interface HistoryItem {
   id: string;
@@ -52,6 +59,8 @@ interface WorkspaceTab {
   respSize: number;
   contract: string;
   contractResult: { passed: boolean; error?: string } | null;
+  wsStatus: 'DISCONNECTED' | 'CONNECTING' | 'CONNECTED';
+  wsMessages: WsMessage[];
 }
 import './index.css';
 
@@ -78,6 +87,8 @@ function App() {
     respSize: 0,
     contract: '',
     contractResult: null,
+    wsStatus: 'DISCONNECTED',
+    wsMessages: [],
   });
 
   const [workspaceTabs, setWorkspaceTabs] = useLocalStorage<WorkspaceTab[]>('api360_tabs', [defaultTab()]);
@@ -114,6 +125,8 @@ function App() {
   const respSize = activeTabObj?.respSize ?? 0;
   const contract = activeTabObj?.contract ?? '';
   const contractResult = activeTabObj?.contractResult ?? null;
+  const wsStatus = activeTabObj?.wsStatus ?? 'DISCONNECTED';
+  const wsMessages = activeTabObj?.wsMessages ?? [];
 
   const setMethod = (v: string | ((prev: string) => string)) => updateActiveTab({ method: typeof v === 'function' ? v(method) : v });
   const setUrl = (v: string | ((prev: string) => string)) => {
@@ -142,8 +155,12 @@ function App() {
   const setRespSize = (v: number | ((prev: number) => number)) => updateActiveTab({ respSize: typeof v === 'function' ? v(respSize) : v });
   const setContract = (v: string | ((prev: string) => string)) => updateActiveTab({ contract: typeof v === 'function' ? v(contract) : v });
   const setContractResult = (v: { passed: boolean; error?: string } | null) => updateActiveTab({ contractResult: v });
+  const setWsStatus = (v: 'DISCONNECTED' | 'CONNECTING' | 'CONNECTED') => updateActiveTab({ wsStatus: v });
+  const setWsMessages = (v: WsMessage[] | ((prev: WsMessage[]) => WsMessage[])) => updateActiveTab({ wsMessages: typeof v === 'function' ? v(wsMessages) : v });
 
   const [activeTab, setActiveTab] = useState('Params');
+  const [wsMessageInput, setWsMessageInput] = useState('{\n  "action": "ping"\n}');
+  const wsClients = useRef<Record<string, any>>({});
 
   const [history, setHistory] = useLocalStorage<HistoryItem[]>('api360_history', []);
   const [collections, setCollections] = useLocalStorage<Collection[]>('api360_collections', [{ id: 'default', name: 'My Collection' }]);
@@ -399,6 +416,106 @@ function App() {
     }
   };
 
+  const toggleWebSocket = async () => {
+    // If it's already connecting or connected, gracefully disconnect
+    if (wsStatus === 'CONNECTING' || wsStatus === 'CONNECTED') {
+      const existingClient = wsClients.current[activeTabObj.id];
+      if (existingClient) {
+        if ((window as any).__TAURI_INTERNALS__) {
+          await existingClient.disconnect();
+        } else {
+          existingClient.close();
+        }
+      }
+      setWsStatus('DISCONNECTED');
+      return;
+    }
+
+    setWsStatus('CONNECTING');
+
+    try {
+      // Resolve env vars for URL
+      const activeEnv = environments.find(e => e.id === activeEnvId);
+      let resolvedUrl = url;
+      if (activeEnv) {
+        resolvedUrl = url.replace(/\{\{(.*?)\}\}/g, (match, key) => {
+          const variable = activeEnv.variables.find(v => v.key === key.trim() && v.enabled);
+          return variable ? variable.value : match;
+        });
+      }
+
+      const reqHeaders: Record<string, string> = {};
+      headers.filter(h => h.enabled && h.key).forEach(h => { reqHeaders[h.key] = activeEnv ? h.value.replace(/\{\{(.*?)\}\}/g, (match, key) => { const v = activeEnv.variables.find(v => v.key === key.trim() && v.enabled); return v ? v.value : match; }) : h.value; });
+
+      const resToken = activeEnv ? bearerToken.replace(/\{\{(.*?)\}\}/g, (match, key) => { const v = activeEnv.variables.find(v => v.key === key.trim() && v.enabled); return v ? v.value : match; }) : bearerToken;
+      if (authType === 'Bearer Token' && resToken) reqHeaders['Authorization'] = `Bearer ${resToken}`;
+
+      const resUser = activeEnv ? basicAuthUser.replace(/\{\{(.*?)\}\}/g, (match, key) => { const v = activeEnv.variables.find(v => v.key === key.trim() && v.enabled); return v ? v.value : match; }) : basicAuthUser;
+      const resPass = activeEnv ? basicAuthPass.replace(/\{\{(.*?)\}\}/g, (match, key) => { const v = activeEnv.variables.find(v => v.key === key.trim() && v.enabled); return v ? v.value : match; }) : basicAuthPass;
+      if (authType === 'Basic Auth' && resUser) reqHeaders['Authorization'] = `Basic ${btoa(resUser + ':' + resPass)}`;
+
+      // MVP Browser WebSocket implementation
+      if ((window as any).__TAURI_INTERNALS__) {
+        const WebSocketPlugin = (await import('@tauri-apps/plugin-websocket')).default;
+        const ws = await WebSocketPlugin.connect(resolvedUrl, { headers: reqHeaders });
+        wsClients.current[activeTabObj.id] = ws;
+
+        setWsStatus('CONNECTED');
+        setWsMessages(prev => [...prev, { id: crypto.randomUUID(), type: 'info', data: `Connected to ${resolvedUrl} (Tauri)`, timestamp: Date.now() }]);
+
+        ws.addListener((msg: any) => {
+          if (msg.type === 'Text') {
+            setWsMessages(prev => [...prev, { id: crypto.randomUUID(), type: 'received', data: msg.data, timestamp: Date.now() }]);
+          } else if (msg.type === 'Close') {
+            setWsStatus('DISCONNECTED');
+            setWsMessages(prev => [...prev, { id: crypto.randomUUID(), type: 'info', data: 'Disconnected (Server Closed)', timestamp: Date.now() }]);
+            delete wsClients.current[activeTabObj.id];
+          }
+        });
+      } else {
+        const ws = new window.WebSocket(resolvedUrl);
+        wsClients.current[activeTabObj.id] = ws;
+
+        ws.onopen = () => {
+          setWsStatus('CONNECTED');
+          setWsMessages(prev => [...prev, { id: crypto.randomUUID(), type: 'info', data: `Connected to ${resolvedUrl}`, timestamp: Date.now() }]);
+        };
+
+        ws.onmessage = (event) => {
+          setWsMessages(prev => [...prev, { id: crypto.randomUUID(), type: 'received', data: event.data, timestamp: Date.now() }]);
+        };
+
+        ws.onerror = (error) => {
+          console.error("WebSocket Error:", error);
+          setWsMessages(prev => [...prev, { id: crypto.randomUUID(), type: 'error', data: `WebSocket Error Occurred`, timestamp: Date.now() }]);
+        };
+
+        ws.onclose = () => {
+          setWsStatus('DISCONNECTED');
+          setWsMessages(prev => [...prev, { id: crypto.randomUUID(), type: 'info', data: 'Disconnected', timestamp: Date.now() }]);
+          delete wsClients.current[activeTabObj.id];
+        };
+      }
+
+    } catch (err: any) {
+      setWsStatus('DISCONNECTED');
+      setWsMessages(prev => [...prev, { id: crypto.randomUUID(), type: 'error', data: `Connection failed: ${err.message}`, timestamp: Date.now() }]);
+    }
+  };
+
+  const sendWsMessage = async () => {
+    const ws = wsClients.current[activeTabObj.id];
+    if (ws) {
+      if ((window as any).__TAURI_INTERNALS__) {
+        await ws.send(wsMessageInput);
+        setWsMessages(prev => [...prev, { id: crypto.randomUUID(), type: 'sent', data: wsMessageInput, timestamp: Date.now() }]);
+      } else if (ws.readyState === window.WebSocket.OPEN) {
+        ws.send(wsMessageInput);
+        setWsMessages(prev => [...prev, { id: crypto.randomUUID(), type: 'sent', data: wsMessageInput, timestamp: Date.now() }]);
+      }
+    }
+  };
+
   const getStatusColor = (code: number) => {
     if (code >= 200 && code < 300) return 'var(--status-success)';
     if (code >= 400 && code < 500) return 'var(--status-warning)';
@@ -406,7 +523,7 @@ function App() {
     return 'var(--text-muted)';
   };
 
-  const tabs = ['Params', 'Headers', 'Auth', 'Body', 'Contract'];
+  const tabs = ['Params', 'Headers', 'Auth', ['WS', 'WSS'].includes(method) ? 'Message' : 'Body', 'Contract'];
 
   return (
     <div className="app-container" style={{ display: 'flex', height: '100vh', width: '100vw' }}>
@@ -557,14 +674,16 @@ function App() {
               <option value="PUT">PUT</option>
               <option value="PATCH">PATCH</option>
               <option value="DELETE">DELETE</option>
+              <option value="WS">WS</option>
+              <option value="WSS">WSS</option>
             </select>
             <div style={{ width: '1px', background: 'var(--border-color)', margin: '4px 0' }}></div>
             <input
               type="text"
-              placeholder="Enter request URL"
+              placeholder={['WS', 'WSS'].includes(method) ? "Enter WebSocket URL (e.g. wss://echo.websocket.org)" : "Enter request URL"}
               value={url}
               onChange={e => setUrl(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && sendRequest()}
+              onKeyDown={e => e.key === 'Enter' && (['WS', 'WSS'].includes(method) ? toggleWebSocket() : sendRequest())}
               style={{ flex: 1, background: 'transparent', border: 'none', color: 'var(--text-primary)', padding: '0 12px', fontSize: '0.95rem' }}
             />
           </div>
@@ -595,13 +714,24 @@ function App() {
           >
             <Save size={16} /> Save
           </button>
-          <button
-            onClick={sendRequest}
-            disabled={loading}
-            style={{ minWidth: '100px', background: 'var(--accent-blue)', color: '#fff', padding: '0 20px', borderRadius: '8px', fontWeight: 500, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', boxShadow: 'var(--accent-blue-glow) 0 4px 12px -2px', opacity: loading ? 0.7 : 1 }}
-          >
-            {loading ? <Loader2 size={16} className="lucide-spin" /> : <><Play size={16} fill="currentColor" /> Send</>}
-          </button>
+
+          {['WS', 'WSS'].includes(method) ? (
+            <button
+              onClick={() => toggleWebSocket()}
+              disabled={wsStatus === 'CONNECTING'}
+              style={{ minWidth: '120px', background: wsStatus === 'CONNECTED' ? 'var(--status-error)' : 'var(--status-success)', color: '#fff', padding: '0 20px', borderRadius: '8px', fontWeight: 500, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', opacity: wsStatus === 'CONNECTING' ? 0.7 : 1 }}
+            >
+              {wsStatus === 'CONNECTING' ? <Loader2 size={16} className="lucide-spin" /> : <><Play size={16} fill="currentColor" /> {wsStatus === 'CONNECTED' ? 'Disconnect' : 'Connect'}</>}
+            </button>
+          ) : (
+            <button
+              onClick={sendRequest}
+              disabled={loading}
+              style={{ minWidth: '100px', background: 'var(--accent-blue)', color: '#fff', padding: '0 20px', borderRadius: '8px', fontWeight: 500, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', boxShadow: 'var(--accent-blue-glow) 0 4px 12px -2px', opacity: loading ? 0.7 : 1 }}
+            >
+              {loading ? <Loader2 size={16} className="lucide-spin" /> : <><Play size={16} fill="currentColor" /> Send</>}
+            </button>
+          )}
         </div>
 
         <div style={{ display: 'flex', flex: 1, overflow: 'hidden', flexDirection: 'column', height: '100%' }}>
@@ -743,6 +873,56 @@ function App() {
                       onChange={(val) => setContract(val || '')}
                       options={{ minimap: { enabled: false }, fontSize: 13, wordWrap: 'on', padding: { top: 16 } }}
                     />
+                  </div>
+                </div>
+              )}
+              {activeTab === 'Message' && (
+                <div style={{ padding: '0', display: 'flex', flexDirection: 'column', height: '100%', gap: '16px', borderTop: '0' }}>
+                  <div style={{ padding: '16px', background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)', display: 'flex', gap: '8px' }}>
+                    <div style={{ flex: 1, height: '150px', border: '1px solid var(--border-color)', borderRadius: '8px', overflow: 'hidden' }}>
+                      <Editor
+                        height="100%"
+                        language="json"
+                        theme="vs-dark"
+                        value={wsMessageInput}
+                        onChange={(val) => setWsMessageInput(val || '')}
+                        options={{ minimap: { enabled: false }, scrollBeyondLastLine: false, fontSize: 13 }}
+                      />
+                    </div>
+                    <button
+                      onClick={sendWsMessage}
+                      disabled={wsStatus !== 'CONNECTED'}
+                      style={{ padding: '0 24px', background: 'var(--accent-blue)', color: '#fff', borderRadius: '8px', fontWeight: 600, opacity: wsStatus !== 'CONNECTED' ? 0.5 : 1 }}
+                    >
+                      Send Message
+                    </button>
+                  </div>
+
+                  <div style={{ flex: 1, padding: '16px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {wsMessages.length === 0 ? (
+                      <div style={{ color: 'var(--text-muted)', textAlign: 'center', marginTop: '40px', fontSize: '0.9rem' }}>No messages yet. Connect to a WebSocket to start streaming.</div>
+                    ) : (
+                      wsMessages.map(msg => (
+                        <div key={msg.id} style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignSelf: msg.type === 'sent' ? 'flex-end' : 'flex-start', maxWidth: '85%' }}>
+                          <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', alignSelf: msg.type === 'sent' ? 'flex-end' : 'flex-start' }}>
+                            {msg.type.toUpperCase()} • {new Date(msg.timestamp).toLocaleTimeString()}
+                          </span>
+                          <div style={{
+                            padding: '8px 12px',
+                            borderRadius: '8px',
+                            fontFamily: 'monospace',
+                            fontSize: '0.85rem',
+                            whiteSpace: 'pre-wrap',
+                            wordBreak: 'break-all',
+                            background: msg.type === 'sent' ? 'var(--accent-blue)' : msg.type === 'received' ? 'var(--bg-primary)' : msg.type === 'error' ? 'var(--status-error)' : 'var(--bg-tertiary)',
+                            color: msg.type === 'info' ? 'var(--text-muted)' : '#fff',
+                            border: msg.type === 'received' ? '1px solid var(--border-color)' : 'none'
+                          }}>
+                            {msg.data}
+                          </div>
+                        </div>
+                      ))
+                    )}
                   </div>
                 </div>
               )}
