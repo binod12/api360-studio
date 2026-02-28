@@ -4,6 +4,11 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release Tag (e.g., v0.0.4)'
+        required: true
+        type: string
 
 jobs:
   release:
@@ -54,8 +59,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           projectPath: './api360'
-          tagName: ${{ github.ref_name }}
-          releaseName: 'API360 Studio ${{ github.ref_name }}'
+          tagName: ${{ github.event.inputs.tag_name || github.ref_name }}
+          releaseName: 'API360 Studio ${{ github.event.inputs.tag_name || github.ref_name }}'
           releaseBody: 'See the attached assets to download API360 for your operating system. Use the portable ZIP files if you cannot use the installers.'
           releaseDraft: true
           prerelease: false
@@ -81,6 +86,7 @@ jobs:
       - name: Upload Portable Releases
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ github.event.inputs.tag_name || github.ref_name }}
           files: |
             api360-windows-portable.zip
             api360-mac-apple-silicon-portable.zip
