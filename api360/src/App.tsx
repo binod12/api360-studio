@@ -1,9 +1,16 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Play, Loader2, Save, Folder, Plus, X } from 'lucide-react';
 import { KeyValueEditor } from './KeyValueEditor';
 import type { KeyValueStore } from './KeyValueEditor';
 import { useLocalStorage } from './useLocalStorage';
 import Editor from '@monaco-editor/react';
+
+interface WsMessage {
+  id: string;
+  type: 'sent' | 'received' | 'info' | 'error';
+  data: string;
+  timestamp: number;
+}
 
 interface HistoryItem {
   id: string;
@@ -52,6 +59,8 @@ interface WorkspaceTab {
   respSize: number;
   contract: string;
   contractResult: { passed: boolean; error?: string } | null;
+  wsStatus: 'DISCONNECTED' | 'CONNECTING' | 'CONNECTED';
+  wsMessages: WsMessage[];
 }
 import './index.css';
 
@@ -78,6 +87,8 @@ function App() {
     respSize: 0,
     contract: '',
     contractResult: null,
+    wsStatus: 'DISCONNECTED',
+    wsMessages: [],
   });
 
   const [workspaceTabs, setWorkspaceTabs] = useLocalStorage<WorkspaceTab[]>('api360_tabs', [defaultTab()]);
@@ -114,6 +125,8 @@ function App() {
   const respSize = activeTabObj?.respSize ?? 0;
   const contract = activeTabObj?.contract ?? '';
   const contractResult = activeTabObj?.contractResult ?? null;
+  const wsStatus = activeTabObj?.wsStatus ?? 'DISCONNECTED';
+  const wsMessages = activeTabObj?.wsMessages ?? [];
 
   const setMethod = (v: string | ((prev: string) => string)) => updateActiveTab({ method: typeof v === 'function' ? v(method) : v });
   const setUrl = (v: string | ((prev: string) => string)) => {
@@ -142,8 +155,12 @@ function App() {
   const setRespSize = (v: number | ((prev: number) => number)) => updateActiveTab({ respSize: typeof v === 'function' ? v(respSize) : v });
   const setContract = (v: string | ((prev: string) => string)) => updateActiveTab({ contract: typeof v === 'function' ? v(contract) : v });
   const setContractResult = (v: { passed: boolean; error?: string } | null) => updateActiveTab({ contractResult: v });
+  const setWsStatus = (v: 'DISCONNECTED' | 'CONNECTING' | 'CONNECTED') => updateActiveTab({ wsStatus: v });
+  const setWsMessages = (v: WsMessage[] | ((prev: WsMessage[]) => WsMessage[])) => updateActiveTab({ wsMessages: typeof v === 'function' ? v(wsMessages) : v });
 
   const [activeTab, setActiveTab] = useState('Params');
+  const [wsMessageInput, setWsMessageInput] = useState('{\n  "action": "ping"\n}');
+  const wsClients = useRef<Record<string, any>>({});
 
   const [history, setHistory] = useLocalStorage<HistoryItem[]>('api360_history', []);
   const [collections, setCollections] = useLocalStorage<Collection[]>('api360_collections', [{ id: 'default', name: 'My Collection' }]);
@@ -182,7 +199,6 @@ function App() {
     }
   }, [url]);
 
-  // Sync params back to URL when edited in the grid
   const handleParamsChange = (newParams: KeyValueStore[]) => {
     setParams(newParams);
     try {
@@ -194,6 +210,14 @@ function App() {
       setUrl(urlObj.toString());
     } catch (e) { }
   };
+
+  useEffect(() => {
+    if (['WS', 'WSS'].includes(method)) {
+      if (activeTab === 'Body' || activeTab === 'Contract') setActiveTab('Message');
+    } else {
+      if (activeTab === 'Message') setActiveTab('Body');
+    }
+  }, [method, activeTab]);
 
 
   const sendRequest = async () => {
@@ -399,6 +423,106 @@ function App() {
     }
   };
 
+  const toggleWebSocket = async () => {
+    // If it's already connecting or connected, gracefully disconnect
+    if (wsStatus === 'CONNECTING' || wsStatus === 'CONNECTED') {
+      const existingClient = wsClients.current[activeTabObj.id];
+      if (existingClient) {
+        if ((window as any).__TAURI_INTERNALS__) {
+          await existingClient.disconnect();
+        } else {
+          existingClient.close();
+        }
+      }
+      setWsStatus('DISCONNECTED');
+      return;
+    }
+
+    setWsStatus('CONNECTING');
+
+    try {
+      // Resolve env vars for URL
+      const activeEnv = environments.find(e => e.id === activeEnvId);
+      let resolvedUrl = url;
+      if (activeEnv) {
+        resolvedUrl = url.replace(/\{\{(.*?)\}\}/g, (match, key) => {
+          const variable = activeEnv.variables.find(v => v.key === key.trim() && v.enabled);
+          return variable ? variable.value : match;
+        });
+      }
+
+      const reqHeaders: Record<string, string> = {};
+      headers.filter(h => h.enabled && h.key).forEach(h => { reqHeaders[h.key] = activeEnv ? h.value.replace(/\{\{(.*?)\}\}/g, (match, key) => { const v = activeEnv.variables.find(v => v.key === key.trim() && v.enabled); return v ? v.value : match; }) : h.value; });
+
+      const resToken = activeEnv ? bearerToken.replace(/\{\{(.*?)\}\}/g, (match, key) => { const v = activeEnv.variables.find(v => v.key === key.trim() && v.enabled); return v ? v.value : match; }) : bearerToken;
+      if (authType === 'Bearer Token' && resToken) reqHeaders['Authorization'] = `Bearer ${resToken}`;
+
+      const resUser = activeEnv ? basicAuthUser.replace(/\{\{(.*?)\}\}/g, (match, key) => { const v = activeEnv.variables.find(v => v.key === key.trim() && v.enabled); return v ? v.value : match; }) : basicAuthUser;
+      const resPass = activeEnv ? basicAuthPass.replace(/\{\{(.*?)\}\}/g, (match, key) => { const v = activeEnv.variables.find(v => v.key === key.trim() && v.enabled); return v ? v.value : match; }) : basicAuthPass;
+      if (authType === 'Basic Auth' && resUser) reqHeaders['Authorization'] = `Basic ${btoa(resUser + ':' + resPass)}`;
+
+      // MVP Browser WebSocket implementation
+      if ((window as any).__TAURI_INTERNALS__) {
+        const WebSocketPlugin = (await import('@tauri-apps/plugin-websocket')).default;
+        const ws = await WebSocketPlugin.connect(resolvedUrl, { headers: reqHeaders });
+        wsClients.current[activeTabObj.id] = ws;
+
+        setWsStatus('CONNECTED');
+        setWsMessages(prev => [...prev, { id: crypto.randomUUID(), type: 'info', data: `Connected to ${resolvedUrl} (Tauri)`, timestamp: Date.now() }]);
+
+        ws.addListener((msg: any) => {
+          if (msg.type === 'Text') {
+            setWsMessages(prev => [...prev, { id: crypto.randomUUID(), type: 'received', data: msg.data, timestamp: Date.now() }]);
+          } else if (msg.type === 'Close') {
+            setWsStatus('DISCONNECTED');
+            setWsMessages(prev => [...prev, { id: crypto.randomUUID(), type: 'info', data: 'Disconnected (Server Closed)', timestamp: Date.now() }]);
+            delete wsClients.current[activeTabObj.id];
+          }
+        });
+      } else {
+        const ws = new window.WebSocket(resolvedUrl);
+        wsClients.current[activeTabObj.id] = ws;
+
+        ws.onopen = () => {
+          setWsStatus('CONNECTED');
+          setWsMessages(prev => [...prev, { id: crypto.randomUUID(), type: 'info', data: `Connected to ${resolvedUrl}`, timestamp: Date.now() }]);
+        };
+
+        ws.onmessage = (event) => {
+          setWsMessages(prev => [...prev, { id: crypto.randomUUID(), type: 'received', data: event.data, timestamp: Date.now() }]);
+        };
+
+        ws.onerror = (error) => {
+          console.error("WebSocket Error:", error);
+          setWsMessages(prev => [...prev, { id: crypto.randomUUID(), type: 'error', data: `WebSocket Error Occurred`, timestamp: Date.now() }]);
+        };
+
+        ws.onclose = () => {
+          setWsStatus('DISCONNECTED');
+          setWsMessages(prev => [...prev, { id: crypto.randomUUID(), type: 'info', data: 'Disconnected', timestamp: Date.now() }]);
+          delete wsClients.current[activeTabObj.id];
+        };
+      }
+
+    } catch (err: any) {
+      setWsStatus('DISCONNECTED');
+      setWsMessages(prev => [...prev, { id: crypto.randomUUID(), type: 'error', data: `Connection failed: ${err.message}`, timestamp: Date.now() }]);
+    }
+  };
+
+  const sendWsMessage = async () => {
+    const ws = wsClients.current[activeTabObj.id];
+    if (ws) {
+      if ((window as any).__TAURI_INTERNALS__) {
+        await ws.send(wsMessageInput);
+        setWsMessages(prev => [...prev, { id: crypto.randomUUID(), type: 'sent', data: wsMessageInput, timestamp: Date.now() }]);
+      } else if (ws.readyState === window.WebSocket.OPEN) {
+        ws.send(wsMessageInput);
+        setWsMessages(prev => [...prev, { id: crypto.randomUUID(), type: 'sent', data: wsMessageInput, timestamp: Date.now() }]);
+      }
+    }
+  };
+
   const getStatusColor = (code: number) => {
     if (code >= 200 && code < 300) return 'var(--status-success)';
     if (code >= 400 && code < 500) return 'var(--status-warning)';
@@ -406,7 +530,9 @@ function App() {
     return 'var(--text-muted)';
   };
 
-  const tabs = ['Params', 'Headers', 'Auth', 'Body', 'Contract'];
+  const tabs = ['WS', 'WSS'].includes(method)
+    ? ['Params', 'Headers', 'Auth', 'Message']
+    : ['Params', 'Headers', 'Auth', 'Body', 'Contract'];
 
   return (
     <div className="app-container" style={{ display: 'flex', height: '100vh', width: '100vw' }}>
@@ -557,14 +683,16 @@ function App() {
               <option value="PUT">PUT</option>
               <option value="PATCH">PATCH</option>
               <option value="DELETE">DELETE</option>
+              <option value="WS">WS</option>
+              <option value="WSS">WSS</option>
             </select>
             <div style={{ width: '1px', background: 'var(--border-color)', margin: '4px 0' }}></div>
             <input
               type="text"
-              placeholder="Enter request URL"
+              placeholder={['WS', 'WSS'].includes(method) ? "Enter WebSocket URL (e.g. wss://echo.websocket.org)" : "Enter request URL"}
               value={url}
               onChange={e => setUrl(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && sendRequest()}
+              onKeyDown={e => e.key === 'Enter' && (['WS', 'WSS'].includes(method) ? toggleWebSocket() : sendRequest())}
               style={{ flex: 1, background: 'transparent', border: 'none', color: 'var(--text-primary)', padding: '0 12px', fontSize: '0.95rem' }}
             />
           </div>
@@ -595,13 +723,24 @@ function App() {
           >
             <Save size={16} /> Save
           </button>
-          <button
-            onClick={sendRequest}
-            disabled={loading}
-            style={{ minWidth: '100px', background: 'var(--accent-blue)', color: '#fff', padding: '0 20px', borderRadius: '8px', fontWeight: 500, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', boxShadow: 'var(--accent-blue-glow) 0 4px 12px -2px', opacity: loading ? 0.7 : 1 }}
-          >
-            {loading ? <Loader2 size={16} className="lucide-spin" /> : <><Play size={16} fill="currentColor" /> Send</>}
-          </button>
+
+          {['WS', 'WSS'].includes(method) ? (
+            <button
+              onClick={() => toggleWebSocket()}
+              disabled={wsStatus === 'CONNECTING'}
+              style={{ minWidth: '120px', background: wsStatus === 'CONNECTED' ? 'var(--status-error)' : 'var(--status-success)', color: '#fff', padding: '0 20px', borderRadius: '8px', fontWeight: 500, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', opacity: wsStatus === 'CONNECTING' ? 0.7 : 1 }}
+            >
+              {wsStatus === 'CONNECTING' ? <Loader2 size={16} className="lucide-spin" /> : <><Play size={16} fill="currentColor" /> {wsStatus === 'CONNECTED' ? 'Disconnect' : 'Connect'}</>}
+            </button>
+          ) : (
+            <button
+              onClick={sendRequest}
+              disabled={loading}
+              style={{ minWidth: '100px', background: 'var(--accent-blue)', color: '#fff', padding: '0 20px', borderRadius: '8px', fontWeight: 500, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', boxShadow: 'var(--accent-blue-glow) 0 4px 12px -2px', opacity: loading ? 0.7 : 1 }}
+            >
+              {loading ? <Loader2 size={16} className="lucide-spin" /> : <><Play size={16} fill="currentColor" /> Send</>}
+            </button>
+          )}
         </div>
 
         <div style={{ display: 'flex', flex: 1, overflow: 'hidden', flexDirection: 'column', height: '100%' }}>
@@ -746,61 +885,113 @@ function App() {
                   </div>
                 </div>
               )}
-            </div>
-          </div>
+              {activeTab === 'Message' && (
+                <div style={{ padding: '0', display: 'flex', flexDirection: 'column', height: '100%', gap: '16px', borderTop: '0' }}>
+                  <div style={{ padding: '16px', background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)', display: 'flex', gap: '8px' }}>
+                    <div style={{ flex: 1, height: '150px', border: '1px solid var(--border-color)', borderRadius: '8px', overflow: 'hidden' }}>
+                      <Editor
+                        height="100%"
+                        language="json"
+                        theme="vs-dark"
+                        value={wsMessageInput}
+                        onChange={(val) => setWsMessageInput(val || '')}
+                        options={{ minimap: { enabled: false }, scrollBeyondLastLine: false, fontSize: 13 }}
+                      />
+                    </div>
+                    <button
+                      onClick={sendWsMessage}
+                      disabled={wsStatus !== 'CONNECTED'}
+                      style={{ padding: '0 24px', background: 'var(--accent-blue)', color: '#fff', borderRadius: '8px', fontWeight: 600, opacity: wsStatus !== 'CONNECTED' ? 0.5 : 1 }}
+                    >
+                      Send Message
+                    </button>
+                  </div>
 
-          <div style={{ flex: 1.2, display: 'flex', flexDirection: 'column', background: 'var(--bg-secondary)' }}>
-            <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', display: 'flex', gap: '24px', fontSize: '0.875rem', background: 'var(--bg-tertiary)' }}>
-              {respStatus === 0 ? (
-                <span style={{ color: 'var(--text-muted)' }}>No Response</span>
-              ) : (
-                <>
-                  <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>Status: <span style={{ color: getStatusColor(respStatus), fontWeight: 600 }}>{respStatus}</span></span>
-                  <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>Time: <span style={{ color: 'var(--text-primary)' }}>{respTime}ms</span></span>
-                  <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>Size: <span style={{ color: 'var(--text-primary)' }}>{(respSize / 1024).toFixed(2)} KB</span></span>
-
-                  {contractResult && (
-                    <span style={{
-                      marginLeft: 'auto',
-                      background: contractResult.passed ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)',
-                      color: contractResult.passed ? 'var(--status-success)' : 'var(--status-error)',
-                      padding: '2px 8px',
-                      borderRadius: '12px',
-                      fontWeight: 600,
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '4px'
-                    }}>
-                      {contractResult.passed ? '✅ Contract Passed' : '❌ Contract Failed'}
-                    </span>
-                  )}
-                </>
-              )}
-            </div>
-
-            {contractResult && !contractResult.passed && (
-              <div style={{ background: 'rgba(239, 68, 68, 0.05)', borderBottom: '1px solid rgba(239, 68, 68, 0.2)', padding: '12px 16px', color: 'var(--status-error)', fontSize: '0.85rem', whiteSpace: 'pre-wrap', maxHeight: '100px', overflowY: 'auto', fontFamily: 'monospace' }}>
-                <span style={{ fontWeight: 600, display: 'block', marginBottom: '4px' }}>Validation Errors:</span>
-                {contractResult.error}
-              </div>
-            )}
-
-            <div style={{ flex: 1, position: 'relative' }}>
-              {!response ? (
-                <div className="flex-center" style={{ height: '100%', color: 'var(--border-highlight)' }}>
-                  {loading ? <Loader2 size={32} className="lucide-spin" /> : 'Hit Send to get a response'}
+                  <div style={{ flex: 1, padding: '16px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {wsMessages.length === 0 ? (
+                      <div style={{ color: 'var(--text-muted)', textAlign: 'center', marginTop: '40px', fontSize: '0.9rem' }}>No messages yet. Connect to a WebSocket to start streaming.</div>
+                    ) : (
+                      wsMessages.map(msg => (
+                        <div key={msg.id} style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignSelf: msg.type === 'sent' ? 'flex-end' : 'flex-start', maxWidth: '85%' }}>
+                          <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', alignSelf: msg.type === 'sent' ? 'flex-end' : 'flex-start' }}>
+                            {msg.type.toUpperCase()} • {new Date(msg.timestamp).toLocaleTimeString()}
+                          </span>
+                          <div style={{
+                            padding: '8px 12px',
+                            borderRadius: '8px',
+                            fontFamily: 'monospace',
+                            fontSize: '0.85rem',
+                            whiteSpace: 'pre-wrap',
+                            wordBreak: 'break-all',
+                            background: msg.type === 'sent' ? 'var(--accent-blue)' : msg.type === 'received' ? 'var(--bg-primary)' : msg.type === 'error' ? 'var(--status-error)' : 'var(--bg-tertiary)',
+                            color: msg.type === 'info' ? 'var(--text-muted)' : '#fff',
+                            border: msg.type === 'received' ? '1px solid var(--border-color)' : 'none'
+                          }}>
+                            {msg.data}
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
                 </div>
-              ) : (
-                <Editor
-                  height="100%"
-                  defaultLanguage="json"
-                  theme="vs-dark"
-                  value={typeof response === 'string' ? response : JSON.stringify(response, null, 2)}
-                  options={{ readOnly: true, minimap: { enabled: false }, fontSize: 13, wordWrap: 'on', padding: { top: 16 } }}
-                />
               )}
             </div>
           </div>
+
+          {!['WS', 'WSS'].includes(method) && (
+            <div style={{ flex: 1.2, display: 'flex', flexDirection: 'column', background: 'var(--bg-secondary)' }}>
+              <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', display: 'flex', gap: '24px', fontSize: '0.875rem', background: 'var(--bg-tertiary)' }}>
+                {respStatus === 0 ? (
+                  <span style={{ color: 'var(--text-muted)' }}>No Response</span>
+                ) : (
+                  <>
+                    <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>Status: <span style={{ color: getStatusColor(respStatus), fontWeight: 600 }}>{respStatus}</span></span>
+                    <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>Time: <span style={{ color: 'var(--text-primary)' }}>{respTime}ms</span></span>
+                    <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>Size: <span style={{ color: 'var(--text-primary)' }}>{(respSize / 1024).toFixed(2)} KB</span></span>
+
+                    {contractResult && (
+                      <span style={{
+                        marginLeft: 'auto',
+                        background: contractResult.passed ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                        color: contractResult.passed ? 'var(--status-success)' : 'var(--status-error)',
+                        padding: '2px 8px',
+                        borderRadius: '12px',
+                        fontWeight: 600,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px'
+                      }}>
+                        {contractResult.passed ? '✅ Contract Passed' : '❌ Contract Failed'}
+                      </span>
+                    )}
+                  </>
+                )}
+              </div>
+
+              {contractResult && !contractResult.passed && (
+                <div style={{ background: 'rgba(239, 68, 68, 0.05)', borderBottom: '1px solid rgba(239, 68, 68, 0.2)', padding: '12px 16px', color: 'var(--status-error)', fontSize: '0.85rem', whiteSpace: 'pre-wrap', maxHeight: '100px', overflowY: 'auto', fontFamily: 'monospace' }}>
+                  <span style={{ fontWeight: 600, display: 'block', marginBottom: '4px' }}>Validation Errors:</span>
+                  {contractResult.error}
+                </div>
+              )}
+
+              <div style={{ flex: 1, position: 'relative' }}>
+                {!response ? (
+                  <div className="flex-center" style={{ height: '100%', color: 'var(--border-highlight)' }}>
+                    {loading ? <Loader2 size={32} className="lucide-spin" /> : 'Hit Send to get a response'}
+                  </div>
+                ) : (
+                  <Editor
+                    height="100%"
+                    defaultLanguage="json"
+                    theme="vs-dark"
+                    value={typeof response === 'string' ? response : JSON.stringify(response, null, 2)}
+                    options={{ readOnly: true, minimap: { enabled: false }, fontSize: 13, wordWrap: 'on', padding: { top: 16 } }}
+                  />
+                )}
+              </div>
+            </div>
+          )}
 
         </div>
       </main>
@@ -848,118 +1039,123 @@ function App() {
             </div>
           </div>
         </div>
-      )}
+      )
+      }
 
-      {isCollectionModalOpen && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
-          <div className="glass-panel" style={{ width: '400px', background: 'var(--bg-secondary)', borderRadius: '12px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px', boxShadow: 'var(--shadow-lg)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h2 style={{ fontSize: '1.1rem', fontWeight: 600 }}>New Collection</h2>
-              <button onClick={() => setIsCollectionModalOpen(false)} style={{ color: 'var(--text-muted)' }}><X size={20} /></button>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <label style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Collection Name</label>
-              <input value={collectionName} onChange={e => setCollectionName(e.target.value)} placeholder="e.g. Stripe API" style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '10px 12px', borderRadius: '6px', fontSize: '0.9rem' }} autoFocus />
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '8px' }}>
-              <button onClick={() => { setIsCollectionModalOpen(false); setCollectionName(''); }} style={{ padding: '8px 16px', color: 'var(--text-muted)', fontWeight: 500 }}>Cancel</button>
-              <button
-                onClick={() => {
-                  if (!collectionName) return;
-                  setCollections([...collections, { id: crypto.randomUUID(), name: collectionName }]);
-                  setIsCollectionModalOpen(false);
-                  setCollectionName('');
-                }}
-                style={{ padding: '8px 16px', background: 'var(--accent-blue)', color: '#fff', borderRadius: '6px', fontWeight: 500 }}
-              >
-                Create
-              </button>
+      {
+        isCollectionModalOpen && (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
+            <div className="glass-panel" style={{ width: '400px', background: 'var(--bg-secondary)', borderRadius: '12px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px', boxShadow: 'var(--shadow-lg)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h2 style={{ fontSize: '1.1rem', fontWeight: 600 }}>New Collection</h2>
+                <button onClick={() => setIsCollectionModalOpen(false)} style={{ color: 'var(--text-muted)' }}><X size={20} /></button>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <label style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Collection Name</label>
+                <input value={collectionName} onChange={e => setCollectionName(e.target.value)} placeholder="e.g. Stripe API" style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '10px 12px', borderRadius: '6px', fontSize: '0.9rem' }} autoFocus />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '8px' }}>
+                <button onClick={() => { setIsCollectionModalOpen(false); setCollectionName(''); }} style={{ padding: '8px 16px', color: 'var(--text-muted)', fontWeight: 500 }}>Cancel</button>
+                <button
+                  onClick={() => {
+                    if (!collectionName) return;
+                    setCollections([...collections, { id: crypto.randomUUID(), name: collectionName }]);
+                    setIsCollectionModalOpen(false);
+                    setCollectionName('');
+                  }}
+                  style={{ padding: '8px 16px', background: 'var(--accent-blue)', color: '#fff', borderRadius: '6px', fontWeight: 500 }}
+                >
+                  Create
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      }
 
-      {isEnvModalOpen && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
-          <div className="glass-panel" style={{ width: '800px', height: '600px', background: 'var(--bg-secondary)', borderRadius: '12px', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: 'var(--shadow-lg)' }}>
-            <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h2 style={{ fontSize: '1.2rem', fontWeight: 600 }}>Manage Environments</h2>
-              <button onClick={() => setIsEnvModalOpen(false)} style={{ color: 'var(--text-muted)' }}><X size={20} /></button>
-            </div>
+      {
+        isEnvModalOpen && (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
+            <div className="glass-panel" style={{ width: '800px', height: '600px', background: 'var(--bg-secondary)', borderRadius: '12px', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: 'var(--shadow-lg)' }}>
+              <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h2 style={{ fontSize: '1.2rem', fontWeight: 600 }}>Manage Environments</h2>
+                <button onClick={() => setIsEnvModalOpen(false)} style={{ color: 'var(--text-muted)' }}><X size={20} /></button>
+              </div>
 
-            <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-              <div style={{ width: '220px', borderRight: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', background: 'var(--bg-tertiary)' }}>
-                <div style={{ padding: '12px', borderBottom: '1px solid var(--border-color)' }}>
-                  <button
-                    onClick={() => {
-                      const newEnv = { id: crypto.randomUUID(), name: 'New Environment', variables: [{ key: '', value: '', enabled: true }] };
-                      setEnvironments([...environments, newEnv]);
-                      setEditingEnvId(newEnv.id);
-                    }}
-                    style={{ width: '100%', padding: '6px', background: 'var(--bg-primary)', border: '1px solid var(--border-color)', borderRadius: '6px', color: 'var(--text-primary)', fontSize: '0.85rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
-                  >
-                    <Plus size={14} /> Add Environment
-                  </button>
-                </div>
-                <div style={{ flex: 1, overflowY: 'auto', padding: '8px' }}>
-                  {environments.map(env => (
-                    <div
-                      key={env.id}
-                      onClick={() => setEditingEnvId(env.id)}
-                      style={{ padding: '8px 12px', cursor: 'pointer', borderRadius: '6px', fontSize: '0.9rem', marginBottom: '4px', background: editingEnvId === env.id ? 'var(--bg-primary)' : 'transparent', color: editingEnvId === env.id ? 'var(--text-primary)' : 'var(--text-muted)', fontWeight: editingEnvId === env.id ? 500 : 400 }}
+              <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+                <div style={{ width: '220px', borderRight: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', background: 'var(--bg-tertiary)' }}>
+                  <div style={{ padding: '12px', borderBottom: '1px solid var(--border-color)' }}>
+                    <button
+                      onClick={() => {
+                        const newEnv = { id: crypto.randomUUID(), name: 'New Environment', variables: [{ key: '', value: '', enabled: true }] };
+                        setEnvironments([...environments, newEnv]);
+                        setEditingEnvId(newEnv.id);
+                      }}
+                      style={{ width: '100%', padding: '6px', background: 'var(--bg-primary)', border: '1px solid var(--border-color)', borderRadius: '6px', color: 'var(--text-primary)', fontSize: '0.85rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
                     >
-                      {env.name}
-                    </div>
-                  ))}
+                      <Plus size={14} /> Add Environment
+                    </button>
+                  </div>
+                  <div style={{ flex: 1, overflowY: 'auto', padding: '8px' }}>
+                    {environments.map(env => (
+                      <div
+                        key={env.id}
+                        onClick={() => setEditingEnvId(env.id)}
+                        style={{ padding: '8px 12px', cursor: 'pointer', borderRadius: '6px', fontSize: '0.9rem', marginBottom: '4px', background: editingEnvId === env.id ? 'var(--bg-primary)' : 'transparent', color: editingEnvId === env.id ? 'var(--text-primary)' : 'var(--text-muted)', fontWeight: editingEnvId === env.id ? 500 : 400 }}
+                      >
+                        {env.name}
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
 
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'var(--bg-primary)' }}>
-                {editingEnvId ? (() => {
-                  const env = environments.find(e => e.id === editingEnvId);
-                  if (!env) return null;
-                  return (
-                    <>
-                      <div style={{ padding: '16px', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '16px' }}>
-                        <label style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Name:</label>
-                        <input
-                          value={env.name}
-                          onChange={e => {
-                            setEnvironments(environments.map(ev => ev.id === env.id ? { ...ev, name: e.target.value } : ev));
-                          }}
-                          style={{ flex: 1, background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', padding: '6px 12px', borderRadius: '4px', color: 'var(--text-primary)' }}
-                        />
-                        <button
-                          onClick={() => {
-                            if (environments.length <= 1) return; // don't delete last one
-                            setEnvironments(environments.filter(ev => ev.id !== env.id));
-                            setEditingEnvId(null);
-                            if (activeEnvId === env.id) setActiveEnvId(environments.filter(ev => ev.id !== env.id)[0].id);
-                          }}
-                          style={{ color: 'var(--status-error)', fontSize: '0.85rem', padding: '6px 12px' }}>
-                          Delete
-                        </button>
-                      </div>
-                      <div style={{ flex: 1, position: 'relative' }}>
-                        <KeyValueEditor
-                          items={env.variables}
-                          onChange={(newVars) => {
-                            setEnvironments(environments.map(ev => ev.id === env.id ? { ...ev, variables: newVars } : ev));
-                          }}
-                          placeholderKey="Variable Name"
-                        />
-                      </div>
-                    </>
-                  );
-                })() : (
-                  <div className="flex-center" style={{ height: '100%', color: 'var(--text-muted)' }}>Select an environment to edit</div>
-                )}
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'var(--bg-primary)' }}>
+                  {editingEnvId ? (() => {
+                    const env = environments.find(e => e.id === editingEnvId);
+                    if (!env) return null;
+                    return (
+                      <>
+                        <div style={{ padding: '16px', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '16px' }}>
+                          <label style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Name:</label>
+                          <input
+                            value={env.name}
+                            onChange={e => {
+                              setEnvironments(environments.map(ev => ev.id === env.id ? { ...ev, name: e.target.value } : ev));
+                            }}
+                            style={{ flex: 1, background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', padding: '6px 12px', borderRadius: '4px', color: 'var(--text-primary)' }}
+                          />
+                          <button
+                            onClick={() => {
+                              if (environments.length <= 1) return; // don't delete last one
+                              setEnvironments(environments.filter(ev => ev.id !== env.id));
+                              setEditingEnvId(null);
+                              if (activeEnvId === env.id) setActiveEnvId(environments.filter(ev => ev.id !== env.id)[0].id);
+                            }}
+                            style={{ color: 'var(--status-error)', fontSize: '0.85rem', padding: '6px 12px' }}>
+                            Delete
+                          </button>
+                        </div>
+                        <div style={{ flex: 1, position: 'relative' }}>
+                          <KeyValueEditor
+                            items={env.variables}
+                            onChange={(newVars) => {
+                              setEnvironments(environments.map(ev => ev.id === env.id ? { ...ev, variables: newVars } : ev));
+                            }}
+                            placeholderKey="Variable Name"
+                          />
+                        </div>
+                      </>
+                    );
+                  })() : (
+                    <div className="flex-center" style={{ height: '100%', color: 'var(--text-muted)' }}>Select an environment to edit</div>
+                  )}
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
-    </div>
+        )
+      }
+    </div >
   );
 }
 
