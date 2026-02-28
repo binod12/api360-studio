@@ -4,6 +4,8 @@ import { KeyValueEditor } from './KeyValueEditor';
 import type { KeyValueStore } from './KeyValueEditor';
 import { useLocalStorage } from './useLocalStorage';
 import Editor from '@monaco-editor/react';
+import { executeScript } from './sandbox';
+import type { TestResult } from './sandbox';
 
 interface WsMessage {
   id: string;
@@ -61,6 +63,9 @@ interface WorkspaceTab {
   contractResult: { passed: boolean; error?: string } | null;
   wsStatus: 'DISCONNECTED' | 'CONNECTING' | 'CONNECTED';
   wsMessages: WsMessage[];
+  preScript: string;
+  postScript: string;
+  testResults: TestResult[];
 }
 import './index.css';
 
@@ -89,6 +94,9 @@ function App() {
     contractResult: null,
     wsStatus: 'DISCONNECTED',
     wsMessages: [],
+    preScript: '',
+    postScript: '',
+    testResults: [],
   });
 
   const [workspaceTabs, setWorkspaceTabs] = useLocalStorage<WorkspaceTab[]>('api360_tabs', [defaultTab()]);
@@ -127,6 +135,9 @@ function App() {
   const contractResult = activeTabObj?.contractResult ?? null;
   const wsStatus = activeTabObj?.wsStatus ?? 'DISCONNECTED';
   const wsMessages = activeTabObj?.wsMessages ?? [];
+  const preScript = activeTabObj?.preScript ?? '';
+  const postScript = activeTabObj?.postScript ?? '';
+  const testResults = activeTabObj?.testResults ?? [];
 
   const setMethod = (v: string | ((prev: string) => string)) => updateActiveTab({ method: typeof v === 'function' ? v(method) : v });
   const setUrl = (v: string | ((prev: string) => string)) => {
@@ -157,6 +168,9 @@ function App() {
   const setContractResult = (v: { passed: boolean; error?: string } | null) => updateActiveTab({ contractResult: v });
   const setWsStatus = (v: 'DISCONNECTED' | 'CONNECTING' | 'CONNECTED') => updateActiveTab({ wsStatus: v });
   const setWsMessages = (v: WsMessage[] | ((prev: WsMessage[]) => WsMessage[])) => updateActiveTab({ wsMessages: typeof v === 'function' ? v(wsMessages) : v });
+  const setPreScript = (v: string | ((prev: string) => string)) => updateActiveTab({ preScript: typeof v === 'function' ? v(preScript) : v });
+  const setPostScript = (v: string | ((prev: string) => string)) => updateActiveTab({ postScript: typeof v === 'function' ? v(postScript) : v });
+  const setTestResults = (v: TestResult[]) => updateActiveTab({ testResults: v });
 
   const [activeTab, setActiveTab] = useState('Params');
   const [wsMessageInput, setWsMessageInput] = useState('{\n  "action": "ping"\n}');
@@ -285,20 +299,48 @@ function App() {
 
       options.headers = reqHeaders;
 
+      let finalUrl = resolvedUrl;
+      const sandboxEnvVars: Record<string, string> = {};
+
+      if (preScript.trim()) {
+        const preContext = {
+          request: { url: finalUrl, method, headers: reqHeaders, body: options.body },
+          environment: {
+            get: (k: string) => sandboxEnvVars[k] || activeEnv?.variables.find(v => v.key === k)?.value,
+            set: (k: string, v: string) => { sandboxEnvVars[k] = v; }
+          },
+          variables: {}
+        };
+        const preRes = executeScript(preScript, preContext);
+        if (preRes.error) {
+          throw new Error(`Pre-request Script Error: ${preRes.error}`);
+        }
+        finalUrl = preRes.context.request!.url;
+        options.headers = preRes.context.request!.headers as HeadersInit;
+        options.body = preRes.context.request!.body;
+      }
+
+      let resFinalStatus = 0;
+      let resFinalTime = 0;
+      let resFinalSize = 0;
+
       let res;
       let respData;
 
       // Use Tauri Native Fetch to bypass CORS (works in Desktop build)
       if ((window as any).__TAURI_INTERNALS__) {
         const { fetch: tauriFetch } = await import('@tauri-apps/plugin-http');
-        res = await tauriFetch(resolvedUrl, options);
+        res = await tauriFetch(finalUrl, options);
 
         const end = performance.now();
-        setRespTime(Math.round(end - start));
-        setRespStatus(res.status);
+        resFinalTime = Math.round(end - start);
+        resFinalStatus = res.status;
+        setRespTime(resFinalTime);
+        setRespStatus(resFinalStatus);
 
         const text = await res.text();
-        setRespSize(new Blob([text]).size);
+        resFinalSize = new Blob([text]).size;
+        setRespSize(resFinalSize);
 
         try { respData = JSON.parse(text); } catch { respData = text; }
         setResponse(respData);
@@ -331,7 +373,7 @@ function App() {
         (window as any).vscode.postMessage({
           command: 'fetch',
           reqId,
-          url: resolvedUrl,
+          url: finalUrl,
           options: {
             method: options.method || 'GET',
             headers: options.headers,
@@ -340,9 +382,12 @@ function App() {
         });
 
         const result = await fetchPromise;
-        setRespTime(Math.round(result.time));
-        setRespStatus(result.status);
-        setRespSize(result.size);
+        resFinalTime = Math.round(result.time);
+        resFinalStatus = result.status;
+        resFinalSize = result.size;
+        setRespTime(resFinalTime);
+        setRespStatus(resFinalStatus);
+        setRespSize(resFinalSize);
         // data comes back already parsed if it was json, or raw string if not
         respData = result.data;
         setResponse(respData);
@@ -352,7 +397,7 @@ function App() {
         // Fallback for browser-based validation that bypasses monkey-patched window.fetch
         res = await new Promise<Response>((resolve, reject) => {
           const xhr = new XMLHttpRequest();
-          xhr.open(options.method || 'GET', resolvedUrl);
+          xhr.open(options.method || 'GET', finalUrl);
           if (options.headers) {
             Object.entries(options.headers).forEach(([k, v]) => xhr.setRequestHeader(k, v as string));
           }
@@ -365,11 +410,14 @@ function App() {
         });
 
         const end = performance.now();
-        setRespTime(Math.round(end - start));
-        setRespStatus(res.status);
+        resFinalTime = Math.round(end - start);
+        resFinalStatus = res.status;
+        setRespTime(resFinalTime);
+        setRespStatus(resFinalStatus);
 
         const text = await res.text();
-        setRespSize(new Blob([text]).size);
+        resFinalSize = new Blob([text]).size;
+        setRespSize(resFinalSize);
 
         try { respData = JSON.parse(text); } catch { respData = text; }
         setResponse(respData);
@@ -390,6 +438,33 @@ function App() {
       });
 
       setResponse(respData);
+
+      setResponse(respData);
+
+      // --- Post-Request Script Execution ---
+      if (postScript.trim()) {
+        const postContext = {
+          response: {
+            status: resFinalStatus,
+            time: resFinalTime,
+            size: resFinalSize,
+            body: respData,
+            headers: {} // Stub for browser API limits
+          },
+          environment: {
+            get: (k: string) => sandboxEnvVars[k] || activeEnv?.variables.find(v => v.key === k)?.value,
+            set: (k: string, v: string) => { sandboxEnvVars[k] = v; }
+          },
+          variables: {}
+        };
+        const postRes = executeScript(postScript, postContext);
+        setTestResults(postRes.tests || []);
+        if (postRes.error) {
+          console.error(`Post-request Script Error:`, postRes.error);
+        }
+      } else {
+        setTestResults([]);
+      }
 
       // Contract Validation Engine
       if (contract.trim() && typeof respData === 'object' && respData !== null) {
@@ -532,7 +607,7 @@ function App() {
 
   const tabs = ['WS', 'WSS'].includes(method)
     ? ['Params', 'Headers', 'Auth', 'Message']
-    : ['Params', 'Headers', 'Auth', 'Body', 'Contract'];
+    : ['Params', 'Headers', 'Auth', 'Body', 'Scripts', 'Contract'];
 
   return (
     <div className="app-container" style={{ display: 'flex', height: '100vh', width: '100vw' }}>
@@ -868,6 +943,36 @@ function App() {
                   </div>
                 </div>
               )}
+              {activeTab === 'Scripts' && (
+                <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                  <div style={{ padding: '8px 16px', background: 'var(--bg-secondary)', fontSize: '0.75rem', color: 'var(--text-primary)', borderBottom: '1px solid var(--border-color)', fontWeight: 600 }}>
+                    PRE-REQUEST SCRIPT
+                  </div>
+                  <div style={{ flex: 1, position: 'relative' }}>
+                    <Editor
+                      height="100%"
+                      defaultLanguage="javascript"
+                      theme="vs-dark"
+                      value={preScript}
+                      onChange={(val) => setPreScript(val || '')}
+                      options={{ minimap: { enabled: false }, fontSize: 13, padding: { top: 8 } }}
+                    />
+                  </div>
+                  <div style={{ padding: '8px 16px', background: 'var(--bg-secondary)', fontSize: '0.75rem', color: 'var(--text-primary)', borderTop: '1px solid var(--border-color)', borderBottom: '1px solid var(--border-color)', fontWeight: 600 }}>
+                    POST-REQUEST SCRIPT
+                  </div>
+                  <div style={{ flex: 1, position: 'relative' }}>
+                    <Editor
+                      height="100%"
+                      defaultLanguage="javascript"
+                      theme="vs-dark"
+                      value={postScript}
+                      onChange={(val) => setPostScript(val || '')}
+                      options={{ minimap: { enabled: false }, fontSize: 13, padding: { top: 8 } }}
+                    />
+                  </div>
+                </div>
+              )}
               {activeTab === 'Contract' && (
                 <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
                   <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', background: 'var(--bg-tertiary)', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
@@ -949,9 +1054,25 @@ function App() {
                     <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>Time: <span style={{ color: 'var(--text-primary)' }}>{respTime}ms</span></span>
                     <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>Size: <span style={{ color: 'var(--text-primary)' }}>{(respSize / 1024).toFixed(2)} KB</span></span>
 
+                    {testResults.length > 0 && (
+                      <span style={{
+                        marginLeft: !contractResult ? 'auto' : '10px',
+                        background: testResults.every(t => t.passed) ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                        color: testResults.every(t => t.passed) ? 'var(--status-success)' : 'var(--status-error)',
+                        padding: '2px 8px',
+                        borderRadius: '12px',
+                        fontWeight: 600,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px'
+                      }}>
+                        {testResults.every(t => t.passed) ? '✅' : '❌'} {testResults.filter(t => t.passed).length}/{testResults.length} Tests Passed
+                      </span>
+                    )}
+
                     {contractResult && (
                       <span style={{
-                        marginLeft: 'auto',
+                        marginLeft: testResults.length > 0 ? '10px' : 'auto',
                         background: contractResult.passed ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)',
                         color: contractResult.passed ? 'var(--status-success)' : 'var(--status-error)',
                         padding: '2px 8px',
@@ -972,6 +1093,15 @@ function App() {
                 <div style={{ background: 'rgba(239, 68, 68, 0.05)', borderBottom: '1px solid rgba(239, 68, 68, 0.2)', padding: '12px 16px', color: 'var(--status-error)', fontSize: '0.85rem', whiteSpace: 'pre-wrap', maxHeight: '100px', overflowY: 'auto', fontFamily: 'monospace' }}>
                   <span style={{ fontWeight: 600, display: 'block', marginBottom: '4px' }}>Validation Errors:</span>
                   {contractResult.error}
+                </div>
+              )}
+
+              {testResults.some(t => !t.passed) && (
+                <div style={{ background: 'rgba(239, 68, 68, 0.05)', borderBottom: '1px solid rgba(239, 68, 68, 0.2)', padding: '12px 16px', color: 'var(--status-error)', fontSize: '0.85rem', whiteSpace: 'pre-wrap', maxHeight: '100px', overflowY: 'auto', fontFamily: 'monospace' }}>
+                  <span style={{ fontWeight: 600, display: 'block', marginBottom: '4px' }}>Test Failures:</span>
+                  {testResults.filter(t => !t.passed).map((t, i) => (
+                    <div key={i}>❌ {t.name}: {t.error}</div>
+                  ))}
                 </div>
               )}
 
