@@ -23,7 +23,7 @@ jobs:
         working-directory: ./api360
         run: |
           npm ci
-          npm run build
+          BUILD_TARGET=vscode npm run build
 
       - name: Install Extension Backend
         working-directory: ./api360-vscode
