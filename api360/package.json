@@ -17,7 +17,8 @@
     "ajv": "^8.18.0",
     "lucide-react": "^0.575.0",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react-dom": "^19.2.0",
+    "react-resizable-panels": "^0.0.55"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
