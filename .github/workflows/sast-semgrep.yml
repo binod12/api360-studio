@@ -1,0 +1,30 @@
+name: "SAST - Semgrep Static Analysis"
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  schedule:
+    - cron: '30 2 * * 1' # Runs at 02:30 UTC every Monday
+
+jobs:
+  semgrep:
+    name: Scan code for vulnerabilities
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+    container:
+      image: semgrep/semgrep
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run Semgrep
+        run: semgrep ci
+        env:
+          SEMGREP_RULES: p/default
+
