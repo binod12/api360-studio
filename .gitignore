@@ -1,0 +1,10 @@
+node_modules/
+dist/
+webview-dist/
+out/
+.DS_Store
+*.vsix
+*.tar.gz
+*.zip
+*.log
+src-tauri/target/
