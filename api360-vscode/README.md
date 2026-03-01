@@ -1,6 +1,4 @@
 <h1 align="center">
-  <img src="icon.png" width="80" alt="API360 Logo">
-  <br>
   API360 Studio
 </h1>
 

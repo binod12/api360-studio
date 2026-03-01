@@ -82,10 +82,23 @@ jobs:
           cd api360/src-tauri/target/x86_64-apple-darwin/release/bundle/macos
           zip -r ../../../../../../../api360-mac-intel-portable.zip "api360.app"
 
-      - name: Upload Portable Releases
-        uses: softprops/action-gh-release@v2
-        if: matrix.platform != 'ubuntu-22.04'
-        with:
-          tag_name: ${{ github.event.inputs.tag_name || github.ref_name || github.run_id }}
-          fail_on_unmatched_files: false
-          files: api360-*-portable.zip
+      - name: Upload Portable Releases (Windows)
+        if: matrix.platform == 'windows-latest'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.event.inputs.tag_name || github.ref_name || github.run_id }}
+        run: gh release upload "$RELEASE_TAG" api360-windows-portable.zip --clobber
+
+      - name: Upload Portable Releases (Mac Silicon)
+        if: matrix.platform == 'macos-latest' && contains(matrix.args, 'aarch64')
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.event.inputs.tag_name || github.ref_name || github.run_id }}
+        run: gh release upload "$RELEASE_TAG" api360-mac-apple-silicon-portable.zip --clobber
+
+      - name: Upload Portable Releases (Mac Intel)
+        if: matrix.platform == 'macos-latest' && contains(matrix.args, 'x86_64')
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.event.inputs.tag_name || github.ref_name || github.run_id }}
+        run: gh release upload "$RELEASE_TAG" api360-mac-intel-portable.zip --clobber
