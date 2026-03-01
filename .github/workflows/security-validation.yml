@@ -1,4 +1,4 @@
-name: "DAST - OWASP ZAP Baseline Scan"
+name: "Security Validation Suite"
 
 on:
   push:
@@ -6,12 +6,31 @@ on:
   pull_request:
     branches: [ "main" ]
   schedule:
-    - cron: '30 3 * * 1' # Runs at 03:30 UTC every Monday
+    - cron: '30 2 * * 1' # Runs at 02:30 UTC every Monday
 
 jobs:
-  zap_scan:
+  sast:
+    name: SAST - Semgrep Code Scan
     runs-on: ubuntu-latest
-    name: Scan the application
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+    container:
+      image: semgrep/semgrep
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run Semgrep
+        run: semgrep ci
+        env:
+          SEMGREP_RULES: p/default
+
+  dast:
+    name: DAST - OWASP ZAP Dynamic Scan
+    runs-on: ubuntu-latest
     
     steps:
       - name: Checkout repository

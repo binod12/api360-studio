@@ -2,7 +2,7 @@ name: Publish VS Code Extension
 
 on:
   workflow_run:
-    workflows: ["SAST - Semgrep Static Analysis", "DAST - OWASP ZAP Baseline Scan"]
+    workflows: ["Security Validation Suite"]
     types:
       - completed
     branches:
