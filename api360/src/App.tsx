@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
-import { Play, Loader2, Save, Folder, Plus, X } from 'lucide-react';
+import { Play, Loader2, Save, Folder, Plus, X, PanelLeft, PanelBottom } from 'lucide-react';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
+import type { ImperativePanelHandle } from 'react-resizable-panels';
 import { KeyValueEditor } from './KeyValueEditor';
 import type { KeyValueStore } from './KeyValueEditor';
 import { useLocalStorage } from './useLocalStorage';
@@ -193,6 +194,29 @@ function App() {
 
   const [isEnvModalOpen, setIsEnvModalOpen] = useState(false);
   const [editingEnvId, setEditingEnvId] = useState<string | null>(null);
+
+  const sidebarPanelRef = useRef<ImperativePanelHandle>(null);
+  const responsePanelRef = useRef<ImperativePanelHandle>(null);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isResponseCollapsed, setIsResponseCollapsed] = useState(false);
+
+  const toggleSidebar = () => {
+    if (!sidebarPanelRef.current) return;
+    if (isSidebarCollapsed) {
+      sidebarPanelRef.current.expand();
+    } else {
+      sidebarPanelRef.current.collapse();
+    }
+  };
+
+  const toggleResponse = () => {
+    if (!responsePanelRef.current) return;
+    if (isResponseCollapsed) {
+      responsePanelRef.current.expand();
+    } else {
+      responsePanelRef.current.collapse();
+    }
+  };
 
   // Sync URL query params with the params state
   useEffect(() => {
@@ -613,7 +637,14 @@ function App() {
   return (
     <div className="app-container" style={{ display: 'flex', height: '100vh', width: '100vw' }}>
       <PanelGroup direction="horizontal">
-        <Panel defaultSize={20} minSize={10} maxSize={40} collapsible={true} >
+        <Panel
+          ref={sidebarPanelRef}
+          defaultSize={20}
+          minSize={10}
+          maxSize={40}
+          collapsible={true}
+          onCollapse={(collapsed) => setIsSidebarCollapsed(collapsed)}
+        >
           <aside className="sidebar glass-panel" style={{ height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--bg-primary)' }}>
             <div style={{ padding: '16px', borderBottom: '1px solid var(--border-color)' }}>
               <h1 style={{ fontSize: '1.2rem', fontWeight: 600, letterSpacing: '-0.02em', background: 'linear-gradient(to right, #fff, #a0a6b5)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>API360</h1>
@@ -781,6 +812,15 @@ function App() {
               </div>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginRight: '8px' }}>
+                  <button onClick={toggleSidebar} title="Toggle Sidebar" style={{ width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: isSidebarCollapsed ? 'transparent' : 'var(--bg-secondary)', color: isSidebarCollapsed ? 'var(--text-muted)' : 'var(--text-primary)', borderRadius: '6px', border: '1px solid var(--border-color)', transition: 'all 0.2s' }}>
+                    <PanelLeft size={16} />
+                  </button>
+                  <button onClick={toggleResponse} title="Toggle Response Pane" style={{ width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: isResponseCollapsed ? 'transparent' : 'var(--bg-secondary)', color: isResponseCollapsed ? 'var(--text-muted)' : 'var(--text-primary)', borderRadius: '6px', border: '1px solid var(--border-color)', transition: 'all 0.2s' }}>
+                    <PanelBottom size={16} />
+                  </button>
+                </div>
+
                 <select
                   value={activeEnvId}
                   onChange={e => setActiveEnvId(e.target.value)}
@@ -1056,7 +1096,13 @@ function App() {
                     <div style={{ height: '1px', width: '100%', background: 'var(--border-color)', margin: 'auto 0' }} />
                   </PanelResizeHandle>
 
-                  <Panel defaultSize={50} minSize={20}>
+                  <Panel
+                    ref={responsePanelRef}
+                    defaultSize={50}
+                    minSize={20}
+                    collapsible={true}
+                    onCollapse={(collapsed) => setIsResponseCollapsed(collapsed)}
+                  >
                     <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--bg-secondary)' }}>
                       <div style={{ flexShrink: 0, padding: '12px 16px', borderBottom: '1px solid var(--border-color)', display: 'flex', gap: '24px', fontSize: '0.875rem', background: 'var(--bg-tertiary)' }}>
                         {respStatus === 0 ? (
