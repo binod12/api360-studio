@@ -86,16 +86,19 @@ jobs:
         if: matrix.platform == 'windows-latest'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "${{ github.event.inputs.tag_name || github.ref_name || github.run_id }}" api360-windows-portable.zip --clobber
+          RELEASE_TAG: ${{ github.event.inputs.tag_name || github.ref_name || github.run_id }}
+        run: gh release upload "$RELEASE_TAG" api360-windows-portable.zip --clobber
 
       - name: Upload Portable Releases (Mac Silicon)
         if: matrix.platform == 'macos-latest' && contains(matrix.args, 'aarch64')
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "${{ github.event.inputs.tag_name || github.ref_name || github.run_id }}" api360-mac-apple-silicon-portable.zip --clobber
+          RELEASE_TAG: ${{ github.event.inputs.tag_name || github.ref_name || github.run_id }}
+        run: gh release upload "$RELEASE_TAG" api360-mac-apple-silicon-portable.zip --clobber
 
       - name: Upload Portable Releases (Mac Intel)
         if: matrix.platform == 'macos-latest' && contains(matrix.args, 'x86_64')
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "${{ github.event.inputs.tag_name || github.ref_name || github.run_id }}" api360-mac-intel-portable.zip --clobber
+          RELEASE_TAG: ${{ github.event.inputs.tag_name || github.ref_name || github.run_id }}
+        run: gh release upload "$RELEASE_TAG" api360-mac-intel-portable.zip --clobber
