@@ -42,11 +42,13 @@ jobs:
         run: npx wait-on http://localhost:5173
         working-directory: ./api360
 
+      - name: Grant ZAP Container Write Permissions
+        run: chmod -R 777 .
+
       - name: ZAP Scan
-        uses: zaproxy/action-baseline@v0.12.0
+        uses: zaproxy/action-baseline@v0.14.0
         with:
           target: 'http://localhost:5173'
-          rules_file_name: '.zap/rules.tsv'
           cmd_options: '-a'
           allow_issue_writing: false
 
