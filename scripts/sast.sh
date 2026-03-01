@@ -16,6 +16,7 @@ docker run --rm \
   --name api360-sast \
   -v "${PWD}:/src" \
   -w /src \
+  --env SEMGREP_BASELINE_COMMIT=false \
   returntocorp/semgrep \
   semgrep ci \
   --config=p/default

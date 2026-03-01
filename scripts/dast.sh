@@ -17,11 +17,9 @@ echo "🔒 Starting API360 Local Dynamic Application Security Testing (DAST)"
 
 # 1. Start the React app in a background daemon
 echo "🔨 Building and serving production bundle..."
-cd "$VITE_DIR"
 npm run build
 npx vite preview --port $PORT &
 VITE_PID=$!
-cd ..
 
 echo "⏳ Waiting for Vite server to boot on http://localhost:${PORT}..."
 npx wait-on http://localhost:${PORT} -t 10000
