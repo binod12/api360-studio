@@ -2,7 +2,7 @@
     "name": "api360-vscode",
     "displayName": "API360 Studio",
     "description": "Enterprise API Testing Client within VS Code",
-    "version": "0.0.8",
+    "version": "0.0.9",
     "publisher": "binod-singh",
     "repository": {
         "type": "git",
