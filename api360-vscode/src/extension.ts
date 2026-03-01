@@ -13,19 +13,19 @@ export function activate(context: vscode.ExtensionContext) {
             {
                 enableScripts: true,
                 retainContextWhenHidden: true,
-                localResourceRoots: [vscode.Uri.file(path.join(context.extensionPath, 'webview-dist'))]
+                localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'webview-dist')]
             }
         );
 
         // Get path to the Vite build output
-        const webviewPath = path.join(context.extensionPath, 'webview-dist', 'index.html');
+        const webviewPath = vscode.Uri.joinPath(context.extensionUri, 'webview-dist', 'index.html').fsPath;
         let htmlContent = '<h1>API360 Build Not Found. Run `npm run build` in the api360 folder.</h1>';
 
         if (fs.existsSync(webviewPath)) {
             htmlContent = fs.readFileSync(webviewPath, 'utf8');
 
             // Process HTML to use VS Code URIs
-            const scriptUri = panel.webview.asWebviewUri(vscode.Uri.file(path.join(context.extensionPath, 'webview-dist', 'assets')));
+            const scriptUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, 'webview-dist', 'assets'));
             // Simple regex replace to fix relative active asset paths
             htmlContent = htmlContent.replace(/(href|src)="\/assets\//g, `$1="${scriptUri}/`);
         }
