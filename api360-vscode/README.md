@@ -1,5 +1,5 @@
 <h1 align="center">
-  <img src="https://raw.githubusercontent.com/binod12/api360-studio/main/api360-vscode/icon.png" width="80" alt="API360 Logo">
+  <img src="icon.png" width="80" alt="API360 Logo">
   <br>
   API360 Studio
 </h1>
