@@ -1,14 +1,16 @@
 name: Publish VS Code Extension
 
 on:
-  push:
+  workflow_run:
+    workflows: ["SAST - Semgrep Static Analysis", "DAST - OWASP ZAP Baseline Scan"]
+    types:
+      - completed
     branches:
       - main
-    paths:
-      - 'api360-vscode/package.json'
 
 jobs:
   publish:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
