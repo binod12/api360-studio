@@ -51,7 +51,7 @@ jobs:
 
       - name: Install Frontend Dependencies
         working-directory: ./api360
-        run: npm install
+        run: npm install --legacy-peer-deps
 
       - name: Build and Release Tauri App
         uses: tauri-apps/tauri-action@v0
