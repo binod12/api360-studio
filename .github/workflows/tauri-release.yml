@@ -1,17 +1,16 @@
 name: Release API360
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_run:
+    workflows: ["SAST - Semgrep Static Analysis", "DAST - OWASP ZAP Baseline Scan"]
+    types:
+      - completed
+    branches:
+      - main
   workflow_dispatch:
-    inputs:
-      tag_name:
-        description: 'Release Tag (e.g., v0.0.4)'
-        required: true
-        type: string
 
 jobs:
   release:
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
     permissions:
       contents: write
     strategy:
@@ -59,8 +58,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           projectPath: './api360'
-          tagName: ${{ github.event.inputs.tag_name || github.ref_name }}
-          releaseName: 'API360 Studio ${{ github.event.inputs.tag_name || github.ref_name }}'
+          tagName: ${{ github.event.inputs.tag_name || github.ref_name || github.run_id }}
+          releaseName: 'API360 Studio ${{ github.event.inputs.tag_name || github.ref_name || github.run_id }}'
           releaseBody: 'See the attached assets to download API360 for your operating system. Use the portable ZIP files if you cannot use the installers.'
           releaseDraft: true
           prerelease: false
@@ -86,7 +85,7 @@ jobs:
       - name: Upload Portable Releases
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event.inputs.tag_name || github.ref_name }}
+          tag_name: ${{ github.event.inputs.tag_name || github.ref_name || github.run_id }}
           files: |
             api360-windows-portable.zip
             api360-mac-apple-silicon-portable.zip
