@@ -471,7 +471,7 @@ function App() {
       if (contract.trim() && typeof respData === 'object' && respData !== null) {
         try {
           const Ajv = (await import('ajv')).default;
-          const ajv = new Ajv({ allErrors: true });
+          const ajv = new Ajv({ allErrors: false });
           const schema = JSON.parse(contract);
           const validate = ajv.compile(schema);
           const valid = validate(respData);
@@ -1058,7 +1058,7 @@ function App() {
 
                   <Panel defaultSize={50} minSize={20}>
                     <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--bg-secondary)' }}>
-                      <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', display: 'flex', gap: '24px', fontSize: '0.875rem', background: 'var(--bg-tertiary)' }}>
+                      <div style={{ flexShrink: 0, padding: '12px 16px', borderBottom: '1px solid var(--border-color)', display: 'flex', gap: '24px', fontSize: '0.875rem', background: 'var(--bg-tertiary)' }}>
                         {respStatus === 0 ? (
                           <span style={{ color: 'var(--text-muted)' }}>No Response</span>
                         ) : (
@@ -1103,14 +1103,14 @@ function App() {
                       </div>
 
                       {contractResult && !contractResult.passed && (
-                        <div style={{ background: 'rgba(239, 68, 68, 0.05)', borderBottom: '1px solid rgba(239, 68, 68, 0.2)', padding: '12px 16px', color: 'var(--status-error)', fontSize: '0.85rem', whiteSpace: 'pre-wrap', maxHeight: '100px', overflowY: 'auto', fontFamily: 'monospace' }}>
+                        <div style={{ flexShrink: 0, background: 'rgba(239, 68, 68, 0.05)', borderBottom: '1px solid rgba(239, 68, 68, 0.2)', padding: '12px 16px', color: 'var(--status-error)', fontSize: '0.85rem', whiteSpace: 'pre-wrap', maxHeight: '100px', overflowY: 'auto', fontFamily: 'monospace' }}>
                           <span style={{ fontWeight: 600, display: 'block', marginBottom: '4px' }}>Validation Errors:</span>
                           {contractResult.error}
                         </div>
                       )}
 
                       {testResults.some(t => !t.passed) && (
-                        <div style={{ background: 'rgba(239, 68, 68, 0.05)', borderBottom: '1px solid rgba(239, 68, 68, 0.2)', padding: '12px 16px', color: 'var(--status-error)', fontSize: '0.85rem', whiteSpace: 'pre-wrap', maxHeight: '100px', overflowY: 'auto', fontFamily: 'monospace' }}>
+                        <div style={{ flexShrink: 0, background: 'rgba(239, 68, 68, 0.05)', borderBottom: '1px solid rgba(239, 68, 68, 0.2)', padding: '12px 16px', color: 'var(--status-error)', fontSize: '0.85rem', whiteSpace: 'pre-wrap', maxHeight: '100px', overflowY: 'auto', fontFamily: 'monospace' }}>
                           <span style={{ fontWeight: 600, display: 'block', marginBottom: '4px' }}>Test Failures:</span>
                           {testResults.filter(t => !t.passed).map((t, i) => (
                             <div key={i}>❌ {t.name}: {t.error}</div>

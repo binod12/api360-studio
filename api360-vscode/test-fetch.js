@@ -5,7 +5,7 @@ async function testFetch() {
     try {
         const response = await axios({
             method: 'GET',
-            url: 'https://json2jsonp.com/?url=http://domain.com/some/json&callback=cbfunc',
+            url: 'https://json2jsonp.com/?url=https://domain.com/some/json&callback=cbfunc',
             validateStatus: () => true,
             maxRedirects: 5
         });
