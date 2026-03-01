@@ -84,9 +84,8 @@ jobs:
 
       - name: Upload Portable Releases
         uses: softprops/action-gh-release@v2
+        if: matrix.platform != 'ubuntu-22.04'
         with:
           tag_name: ${{ github.event.inputs.tag_name || github.ref_name || github.run_id }}
-          files: |
-            api360-windows-portable.zip
-            api360-mac-apple-silicon-portable.zip
-            api360-mac-intel-portable.zip
+          fail_on_unmatched_files: false
+          files: api360-*-portable.zip

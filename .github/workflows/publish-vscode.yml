@@ -24,7 +24,7 @@ jobs:
       - name: Build React Webview
         working-directory: ./api360
         run: |
-          npm ci
+          npm ci --legacy-peer-deps
           BUILD_TARGET=vscode npm run build
 
       - name: Install Extension Backend
