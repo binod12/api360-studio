@@ -68,7 +68,9 @@ jobs:
       - name: Create Portable Windows ZIP
         if: matrix.platform == 'windows-latest'
         run: |
-          Get-ChildItem -Path api360/src-tauri/target/release/ -Filter api360.exe -Recurse | Select-Object -First 1 | Compress-Archive -DestinationPath api360-windows-portable.zip
+          New-Item -ItemType Directory -Force -Path api360-portable
+          Copy-Item -Path "api360/src-tauri/target/release/app.exe" -Destination "api360-portable/api360.exe"
+          Compress-Archive -Path "api360-portable/*" -DestinationPath api360-windows-portable.zip
           
       - name: Create Portable Mac ZIP (Apple Silicon)
         if: matrix.platform == 'macos-latest' && contains(matrix.args, 'aarch64')
