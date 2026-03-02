@@ -36,4 +36,11 @@ jobs:
         working-directory: ./api360-vscode
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
-        run: npx @vscode/vsce publish
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          MAJOR_MINOR=$(echo $VERSION | cut -d. -f1,2)
+          PATCH_NUM=$(( ${{ github.run_number }} + 100 ))
+          NEW_VERSION="$MAJOR_MINOR.$PATCH_NUM"
+          echo "Automated version bump: $VERSION -> $NEW_VERSION"
+          npm version $NEW_VERSION --no-git-tag-version --allow-same-version
+          npx @vscode/vsce publish
