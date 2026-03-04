@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Play, Loader2, Save, Folder, Plus, X, PanelLeft, PanelBottom } from 'lucide-react';
+import { Play, Loader2, Save, Folder, Plus, X, PanelLeft, PanelBottom, Database } from 'lucide-react';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import type { ImperativePanelHandle } from 'react-resizable-panels';
 import { KeyValueEditor } from './KeyValueEditor';
@@ -610,6 +610,199 @@ function App() {
     }
   };
 
+  const fetchIntrospectionSchema = async () => {
+    setLoading(true);
+    setResponse(null);
+    const start = performance.now();
+    try {
+      const options: RequestInit = { method: 'POST' };
+
+      const reqHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+      headers.filter(h => h.enabled && h.key).forEach(h => { reqHeaders[h.key] = h.value; });
+
+      const activeEnv = environments.find(e => e.id === activeEnvId);
+      const resolveVariables = (text: string) => {
+        if (!text || !activeEnv) return text;
+        return text.replace(/\{\{(.*?)\}\}/g, (match, key) => {
+          const variable = activeEnv.variables.find(v => v.key === key.trim() && v.enabled);
+          return variable ? variable.value : match;
+        });
+      };
+
+      const resolvedUrl = resolveVariables(url);
+
+      for (const k in reqHeaders) { reqHeaders[k] = resolveVariables(reqHeaders[k]); }
+
+      if (authType === 'Bearer Token' && bearerToken) {
+        reqHeaders['Authorization'] = `Bearer ${bearerToken}`;
+      } else if (authType === 'Basic Auth' && (basicAuthUser || basicAuthPass)) {
+        reqHeaders['Authorization'] = `Basic ${btoa(`${basicAuthUser}:${basicAuthPass}`)}`;
+      }
+
+      options.headers = reqHeaders;
+
+      const introspectionQuery = `
+        query IntrospectionQuery {
+          __schema {
+            queryType { name }
+            mutationType { name }
+            subscriptionType { name }
+            types {
+              ...FullType
+            }
+            directives {
+              name
+              description
+              locations
+              args {
+                ...InputValue
+              }
+            }
+          }
+        }
+        fragment FullType on __Type {
+          kind
+          name
+          description
+          fields(includeDeprecated: true) {
+            name
+            description
+            args {
+              ...InputValue
+            }
+            type {
+              ...TypeRef
+            }
+            isDeprecated
+            deprecationReason
+          }
+          inputFields {
+            ...InputValue
+          }
+          interfaces {
+            ...TypeRef
+          }
+          enumValues(includeDeprecated: true) {
+            name
+            description
+            isDeprecated
+            deprecationReason
+          }
+          possibleTypes {
+            ...TypeRef
+          }
+        }
+        fragment InputValue on __InputValue {
+          name
+          description
+          type { ...TypeRef }
+          defaultValue
+        }
+        fragment TypeRef on __Type {
+          kind
+          name
+          ofType {
+            kind
+            name
+            ofType {
+              kind
+              name
+              ofType {
+                kind
+                name
+                ofType {
+                  kind
+                  name
+                  ofType {
+                    kind
+                    name
+                    ofType {
+                      kind
+                      name
+                      ofType {
+                        kind
+                        name
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      `;
+
+      options.body = JSON.stringify({ query: introspectionQuery });
+
+      let resFinalStatus = 0;
+      let resFinalTime = 0;
+      let resFinalSize = 0;
+      let respData;
+
+      if ((window as any).__TAURI_INTERNALS__) {
+        const { fetch: tauriFetch } = await import('@tauri-apps/plugin-http');
+        const res = await tauriFetch(resolvedUrl, options);
+        resFinalTime = Math.round(performance.now() - start);
+        resFinalStatus = res.status;
+        const text = await res.text();
+        resFinalSize = new Blob([text]).size;
+        try { respData = JSON.parse(text); } catch { respData = text; }
+      } else if ((window as any).vscode) {
+        const reqId = crypto.randomUUID();
+        const fetchPromise = new Promise<{ status: number, data: any, time: number, size: number }>((resolve, reject) => {
+          const handler = (event: MessageEvent) => {
+            const msg = event.data;
+            if (msg && msg.reqId === reqId) {
+              window.removeEventListener('message', handler);
+              if (msg.command === 'fetchResponse') resolve({ status: msg.status, data: msg.data, time: msg.time, size: msg.size });
+              else if (msg.command === 'fetchError') reject(new Error(msg.error));
+            }
+          };
+          window.addEventListener('message', handler);
+        });
+        (window as any).vscode.postMessage({ command: 'fetch', reqId, url: resolvedUrl, options });
+        const result = await fetchPromise;
+        resFinalTime = Math.round(result.time);
+        resFinalStatus = result.status;
+        resFinalSize = result.size;
+        respData = result.data;
+      } else {
+        const res = await new Promise<Response>((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open(options.method || 'POST', resolvedUrl);
+          if (options.headers) {
+            Object.entries(options.headers).forEach(([k, v]) => xhr.setRequestHeader(k, v as string));
+          }
+          xhr.onload = () => resolve(new Response(xhr.response, { status: xhr.status }));
+          xhr.onerror = () => reject(new TypeError('Network request failed'));
+          if (options.body) xhr.send(options.body as any); else xhr.send();
+        });
+        resFinalTime = Math.round(performance.now() - start);
+        resFinalStatus = res.status;
+        const text = await res.text();
+        resFinalSize = new Blob([text]).size;
+        try { respData = JSON.parse(text); } catch { respData = text; }
+      }
+
+      setRespTime(resFinalTime);
+      setRespStatus(resFinalStatus);
+      setRespSize(resFinalSize);
+      setResponse(respData);
+      setTestResults([]);
+      setContractResult(null);
+      if (isResponseCollapsed && responsePanelRef.current) {
+        responsePanelRef.current.expand();
+      }
+
+    } catch (error: any) {
+      setRespTime(Math.round(performance.now() - start));
+      setRespStatus(0);
+      setResponse({ error: error.message || 'Failed to fetch' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const sendWsMessage = async () => {
     const ws = wsClients.current[activeTabObj.id];
     if (ws) {
@@ -941,13 +1134,24 @@ function App() {
                   )}
                   {activeTab === 'Body' && (
                     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                      <div style={{ padding: '8px 16px', borderBottom: '1px solid var(--border-color)', background: 'var(--bg-tertiary)', display: 'flex', gap: '16px' }}>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-primary)', cursor: 'pointer', fontSize: '0.85rem' }}>
-                          <input type="radio" name={`bodyType-${activeTabId}`} checked={bodyType === 'json'} onChange={() => setBodyType('json')} /> Raw JSON
-                        </label>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-primary)', cursor: 'pointer', fontSize: '0.85rem' }}>
-                          <input type="radio" name={`bodyType-${activeTabId}`} checked={bodyType === 'graphql'} onChange={() => { setBodyType('graphql'); setMethod('POST'); }} /> GraphQL
-                        </label>
+                      <div style={{ padding: '8px 16px', borderBottom: '1px solid var(--border-color)', background: 'var(--bg-tertiary)', display: 'flex', gap: '16px', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div style={{ display: 'flex', gap: '16px' }}>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-primary)', cursor: 'pointer', fontSize: '0.85rem' }}>
+                            <input type="radio" name={`bodyType-${activeTabId}`} checked={bodyType === 'json'} onChange={() => setBodyType('json')} /> Raw JSON
+                          </label>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-primary)', cursor: 'pointer', fontSize: '0.85rem' }}>
+                            <input type="radio" name={`bodyType-${activeTabId}`} checked={bodyType === 'graphql'} onChange={() => { setBodyType('graphql'); setMethod('POST'); }} /> GraphQL
+                          </label>
+                        </div>
+                        {bodyType === 'graphql' && (
+                          <button
+                            onClick={fetchIntrospectionSchema}
+                            disabled={loading || !url}
+                            style={{ padding: '4px 12px', background: 'var(--bg-secondary)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px', opacity: (loading || !url) ? 0.5 : 1, cursor: (loading || !url) ? 'not-allowed' : 'pointer', transition: 'all 0.2s' }}
+                          >
+                            <Database size={12} /> Fetch Schema
+                          </button>
+                        )}
                       </div>
                       <div style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column' }}>
                         {bodyType === 'json' ? (
