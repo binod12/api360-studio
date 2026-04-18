@@ -1,63 +1,44 @@
 # API360 Studio
 
-API360 is a powerful, lightweight, cross-platform API testing client designed to be a fast, offline-first alternative to tools like Postman or Insomnia. 
+API360 Studio is a powerful, cross-platform, one-stop-shop API testing and development client. Designed to be a comprehensive offline-first alternative to tools like Postman, Stoplight, and ReadyAPI, it brings your entire API lifecycle into a single native desktop application.
 
-Built with web technologies but deployed as a native desktop application, API360 effortlessly bypasses browser CORS restrictions to test any endpoint seamlessly.
-
----
-
-## 🏗 System Architecture & Overview
-
-API360 employs a hybrid application architecture, leveraging a fast web frontend embedded within a native systems-level backend.
-
-*   **Frontend Interface (React + Vite):** The user interface is a Single Page Application (SPA) providing a highly reactive, state-driven experience. It handles all JSON parsing, syntax highlighting via Monaco, and local state management.
-*   **Native Backend (Tauri + Rust):** The application runs inside the Tauri framework. Unlike Electron, which bundles an entire Chromium browser (resulting in huge app sizes and heavy memory usage), Tauri uses the host operating system's native webview (WebKitGTK on Linux, WkWebView on macOS, and WebView2 on Windows). 
-*   **Network Layer (CORS Bypass):** Standard browser `fetch` requests strictly enforce Cross-Origin Resource Sharing (CORS) policies, which block client-side API testing. API360 solves this by intercepting requests and routing them through Tauri's Rust-based `@tauri-apps/plugin-http` client. The operating system executes the network request natively, completely bypassing browser security sandboxes.
-*   **Persistence Layer:** All collections, request histories, and configurations are securely stored offline on the user's machine utilizing HTML5 Local Storage.
-
-## 💻 Technology Stack
-
-*   **Core Frameworks:** React 19, Vite, TypeScript
-*   **Desktop Shell:** Tauri 2.0 (Rust)
-*   **Code Editor:** `@monaco-editor/react` (The core engine that powers VS Code)
-*   **Styling & UI:** Vanilla CSS with custom Glassmorphic design tokens and `lucide-react` icons.
-*   **CI/CD Pipeline:** Automated GitHub Actions workflows for cross-platform binary compilation (Linux, macOS, Windows).
+Built with bleeding-edge web technologies (React 19 + Vite) but deployed as a systems-level native application using Tauri, API360 effortlessly bypasses browser CORS restrictions to test endpoints simultaneously bridging the gap from local design to CI/CD automation.
 
 ---
 
-## 🗺 Roadmap & Current Status
+## 🌟 Key Features
 
-API360 was built in iterative phases. The core Minimum Viable Product (MVP) is **100% Complete**.
+API360 Studio natively integrates workflow tooling across four core pillars:
 
-### ✅ Completed Phases (MVP)
-1.  **Phase 1: Foundation.** Vite/React project initialization and core layout setup.
-2.  **Phase 2: Core HTTP Interface.** Implementation of URL bar, Method dropdown, Params/Headers Key-Value editors, and the Monaco JSON body editor.
-3.  **Phase 3: Native Networking.** Integration of Tauri Rust backend to proxy HTTP requests and bypass CORS.
-4.  **Phase 4: Local Storage Engine.** Built a custom `useLocalStorage` hook to persist the last 50 executed requests dynamically.
-5.  **Phase 5: Cross-Platform Builds.** Configured automated GitHub Actions workflows to build `.dmg` (Mac), `api360-portable.zip` (Windows Portable), and Linux binaries.
-6.  **Phase 6: Collections & Authentication.** Added a Glassmorphic React modal to create sidebar collection folders. Implemented dynamic Bearer Token and Basic Auth header injection logic.
+### 1. HTTP Client & Postman Parity
+- **Robust Execution Engine:** Full support for REST, WebSocket, and GraphQL endpoints with dynamic Bearer and Basic Authentication injection.
+- **Environment Contexts:** Define dynamic variables (e.g., `{{BASE_URL}}`) and seamlessly swap between environments (Staging, Production) without modifying your requests.
+- **Deep Integration Importer:** Drop your existing `v2.1` Postman Collections into the UI, and the hierarchical parser will recreate your entire workspace automatically.
+- **Pre & Post Request Scripting:** Native JS execution sandboxes let you set variables, compute hashes dynamically before execution, or write automated assertions against response payloads.
 
-### 🚀 Future Roadmap (Post-MVP)
-With the foundation solid, the following features are planned for future iterations:
-- [ ] **Environment Variables:** Support for dynamic variables like `{{BASE_URL}}` or `{{API_KEY}}` that can be swapped based on selected environments (e.g., Staging vs. Production).
-- [ ] **Tabbed Workspaces:** Allow users to open multiple requests in separate tabs side-by-side without losing state.
-- [ ] **GraphQL Support:** Dedicated query editor with schema fetching and autocomplete for GraphQL endpoints.
-- [ ] **WebSocket/gRPC Testing:** Extend the networking protocol support beyond standard REST/HTTP.
-- [ ] **Pre/Post Request Scripting:** Add the ability to write small JavaScript snippets to execute before a request runs (to generate custom hash signatures) or after it runs (to assert test conditions, similar to Postman scripts).
+### 2. Design-First OpenAPI Architecture
+- **Dual-Pane Designer:** Easily switch from the standard "Client" runner to "Designer" mode. Edit your OpenAPI yaml/json specifications via Microsoft's `monaco-editor` while viewing a dynamic split-screen visual preview tree.
+- **Real-Time Linting:** Code governance engines spot schema anomalies locally before requests are ever dispatched.
+- **Dynamic Prism Mocking:** Instantly toggle the active "Prism Mock" proxy. Incoming requests are intercepted in-flight and hydrated with the intelligent example schemas defined in your OpenAPI documents—all without deploying a backend.
+
+### 3. Enterprise Quality Assurance
+- **Data-Driven Functional Tests:** Effortlessly build execution grids. Supply a CSV dataset and map column names directly into your API payload variables to execute bulk functional testing dynamically.
+- **Performance Load Runner:** An internal parallel-execution engine simulates hundreds of concurrent virtual users, plotting latency, P95 metrics, and throughput.
+- **Automated Security Scanner:** Instantly trigger localized active fuzzing routines to test for OWASP vulnerabilities such as SQL injections and XSS payload leakage directly across your query parameters.
+
+### 4. Headless CI/CD Automations
+- **Zero-Dependency Pipeline Integration:** Click "Deploy to CI/CD" to generate a headless Node.js replica of the API360 runner.
+- **Automated Bundling:** The bundler aggregates your entire local workspace layout alongside preconfigured GitHub Actions (`.github/workflows/api360-tests.yml`) and Jenkins pipelines. Drop the resulting archive directly into your repository!
 
 ---
 
-## ⚙️ Local Development
+## 🗺 Future Roadmap
 
-To run the application locally in development mode:
+API360 Studio has successfully achieved Minimum Viable Readiness across its original 4-Phase rollout. 
 
-```bash
-# Install dependencies
-npm install
+Looking forward, the roadmap will focus heavily on:
+1. **gRPC & SOAP Support:** Extending network ingestion channels beyond standard REST/Graph protocols.
+2. **Team Synchronization:** While inherently offline-first, introducing an optional end-to-end encrypted synchronisation layer utilizing WebRTC to share workspace data securely across organizations.
+3. **Advanced Flow Builder:** Visually mapping chained API requests where responses map dynamically to follow-up execution nodes using an explicit node-graph canvas.
+4. **Interactive Auth Handlers:** Implementing visual OAuth 2.0 flows and PKCE handlers directly into the authentication configurations.
 
-# Run the web frontend only (CORS will apply to external domains)
-npm run dev
-
-# Run the full Native Desktop App (Requires Rust installed)
-npm run tauri dev
-```
