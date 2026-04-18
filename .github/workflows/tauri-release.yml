@@ -1,16 +1,12 @@
 name: Release API360
 on:
-  workflow_run:
-    workflows: ["Security Validation Suite"]
-    types:
-      - completed
-    branches:
-      - main
+  push:
+    tags:
+      - 'v*'
   workflow_dispatch:
 
 jobs:
   release:
-    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
     permissions:
       contents: write
     strategy:
@@ -58,8 +54,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           projectPath: './api360'
-          tagName: ${{ github.event.inputs.tag_name || github.ref_name || github.run_id }}
-          releaseName: 'API360 Studio ${{ github.event.inputs.tag_name || github.ref_name || github.run_id }}'
+          tagName: ${{ github.ref_name }}
+          releaseName: 'API360 Studio ${{ github.ref_name }}'
           releaseBody: 'See the attached assets to download API360 for your operating system. Use the portable ZIP files if you cannot use the installers.'
           releaseDraft: true
           prerelease: false
@@ -88,19 +84,19 @@ jobs:
         if: matrix.platform == 'windows-latest'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TAG: ${{ github.event.inputs.tag_name || github.ref_name || github.run_id }}
+          RELEASE_TAG: ${{ github.ref_name }}
         run: gh release upload "$RELEASE_TAG" api360-windows-portable.zip --clobber
 
       - name: Upload Portable Releases (Mac Silicon)
         if: matrix.platform == 'macos-latest' && contains(matrix.args, 'aarch64')
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TAG: ${{ github.event.inputs.tag_name || github.ref_name || github.run_id }}
+          RELEASE_TAG: ${{ github.ref_name }}
         run: gh release upload "$RELEASE_TAG" api360-mac-apple-silicon-portable.zip --clobber
 
       - name: Upload Portable Releases (Mac Intel)
         if: matrix.platform == 'macos-latest' && contains(matrix.args, 'x86_64')
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TAG: ${{ github.event.inputs.tag_name || github.ref_name || github.run_id }}
+          RELEASE_TAG: ${{ github.ref_name }}
         run: gh release upload "$RELEASE_TAG" api360-mac-intel-portable.zip --clobber
