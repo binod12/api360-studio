@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Play, Loader2, Save, Folder, Plus, X, PanelLeft, PanelBottom, Database } from 'lucide-react';
+import { Play, Loader2, Save, Folder, Plus, X, PanelLeft, PanelBottom, Database, Download, AlertTriangle, CheckCircle2, Rocket } from 'lucide-react';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import type { ImperativePanelHandle } from 'react-resizable-panels';
 import { KeyValueEditor } from './KeyValueEditor';
@@ -8,6 +8,13 @@ import { useLocalStorage } from './useLocalStorage';
 import Editor from '@monaco-editor/react';
 import { executeScript } from './sandbox';
 import type { TestResult } from './sandbox';
+import { parsePostmanCollection } from './postman';
+import { ApiDesigner } from './ApiDesigner';
+import { runLoadTest, type LoadTestResult } from './loadRunner';
+import { runSecurityScan, type SecurityScanReport } from './securityScanner';
+import { runDataDrivenTest, type DataDrivenReport } from './dataDrivenTester';
+import { CLI_RUNNER_TEMPLATE } from './cliRunnerTemplate';
+import JSZip from 'jszip';
 
 interface WsMessage {
   id: string;
@@ -177,6 +184,11 @@ function App() {
   const [activeTab, setActiveTab] = useState('Params');
   const [wsMessageInput, setWsMessageInput] = useState('{\n  "action": "ping"\n}');
   const wsClients = useRef<Record<string, any>>({});
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [appMode, setAppMode] = useLocalStorage<'client' | 'designer'>('api360_app_mode', 'client');
+  const [openApiDoc, setOpenApiDoc] = useLocalStorage<string>('api360_openapi_doc', '{\n  "openapi": "3.0.0",\n  "info": {\n    "title": "Sample API",\n    "version": "1.0.0"\n  },\n  "paths": {}\n}');
+  const [isMockEnabled, setIsMockEnabled] = useLocalStorage<boolean>('api360_mock_enabled', false);
 
   const [history, setHistory] = useLocalStorage<HistoryItem[]>('api360_history', []);
   const [collections, setCollections] = useLocalStorage<Collection[]>('api360_collections', [{ id: 'default', name: 'My Collection' }]);
@@ -194,6 +206,26 @@ function App() {
 
   const [isEnvModalOpen, setIsEnvModalOpen] = useState(false);
   const [editingEnvId, setEditingEnvId] = useState<string | null>(null);
+
+  const [isLoadModalOpen, setIsLoadModalOpen] = useState(false);
+  const [loadVusers, setLoadVusers] = useState(10);
+  const [loadIterations, setLoadIterations] = useState(5);
+  const [loadProgress, setLoadProgress] = useState(0);
+  const [loadTotal, setLoadTotal] = useState(0);
+  const [loadResult, setLoadResult] = useState<LoadTestResult | null>(null);
+  const [isLoadRunning, setIsLoadRunning] = useState(false);
+
+  const [isSecurityModalOpen, setIsSecurityModalOpen] = useState(false);
+  const [isSecurityRunning, setIsSecurityRunning] = useState(false);
+  const [securityProgress, setSecurityProgress] = useState('');
+  const [securityResult, setSecurityResult] = useState<SecurityScanReport | null>(null);
+
+  const [isDataDrivenModalOpen, setIsDataDrivenModalOpen] = useState(false);
+  const [csvDataInput, setCsvDataInput] = useState('userId, action\n1, login\n2, logout\n3, view_profile');
+  const [dataDrivenResult, setDataDrivenResult] = useState<DataDrivenReport | null>(null);
+  const [isDataDrivenRunning, setIsDataDrivenRunning] = useState(false);
+
+  const [isDeployModalOpen, setIsDeployModalOpen] = useState(false);
 
   const sidebarPanelRef = useRef<ImperativePanelHandle>(null);
   const responsePanelRef = useRef<ImperativePanelHandle>(null);
@@ -216,6 +248,26 @@ function App() {
     } else {
       responsePanelRef.current.collapse();
     }
+  };
+
+  const handleImportCollection = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const jsonStr = event.target?.result as string;
+        const result = parsePostmanCollection(jsonStr);
+        setCollections(prev => [...prev, ...result.collections]);
+        setSavedRequests(prev => [...prev, ...result.requests]);
+      } catch (err: any) {
+        console.error("Failed to import collection:", err);
+        alert(`Failed to import postman collection: ${err.message}`);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = ''; // Reset
   };
 
   // Sync URL query params with the params state
@@ -293,6 +345,40 @@ function App() {
       };
 
       const resolvedUrl = resolveVariables(url);
+
+      // --- DYNAMIC MOCK SERVER INTERCEPTOR ---
+      if (isMockEnabled && openApiDoc) {
+        try {
+           const spec = JSON.parse(openApiDoc);
+           let mockResponse: any = { mocked: true, message: "Prism mock response (No matching path found in Spec)" };
+           try {
+             const urlObj = new URL(resolvedUrl);
+             const pathMatches = Object.keys(spec.paths || {}).filter(p => urlObj.pathname.includes(p.replace(/\{.*\}/g, '')));
+             if (pathMatches.length > 0) {
+               const methodSpec = spec.paths[pathMatches[0]][method.toLowerCase()];
+               if (methodSpec && methodSpec.responses) {
+                  const successCode = Object.keys(methodSpec.responses).find(k => k.startsWith('2')) || '200';
+                  const content = methodSpec.responses[successCode]?.content;
+                  if (content && content['application/json']?.example) {
+                     mockResponse = content['application/json'].example;
+                  } else {
+                     mockResponse = { mocked: true, message: `Prism mock: schema found for ${method} ${pathMatches[0]} but no example provided` };
+                  }
+               }
+             }
+           } catch(e) {}
+           
+           setRespTime(5);
+           setRespStatus(200);
+           setRespSize(new Blob([JSON.stringify(mockResponse)]).size);
+           setResponse(mockResponse);
+           setLoading(false);
+           return;
+        } catch(e) {
+           console.warn("Mock enabled but spec invalid");
+        }
+      }
+      // ----------------------------------------
 
       if (['POST', 'PUT', 'PATCH'].includes(method)) {
         if (bodyType === 'graphql') {
@@ -840,18 +926,56 @@ function App() {
         >
           <aside className="sidebar glass-panel" style={{ height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--bg-primary)' }}>
             <div style={{ padding: '16px', borderBottom: '1px solid var(--border-color)' }}>
-              <h1 style={{ fontSize: '1.2rem', fontWeight: 600, letterSpacing: '-0.02em', background: 'linear-gradient(to right, #fff, #a0a6b5)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>API360</h1>
+              <h1 style={{ fontSize: '1.2rem', fontWeight: 600, letterSpacing: '-0.02em', background: 'linear-gradient(to right, #fff, #a0a6b5)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', marginBottom: '12px' }}>API360</h1>
+              <div style={{ display: 'flex', background: 'var(--bg-secondary)', padding: '4px', borderRadius: '8px', border: '1px solid var(--border-color)'}}>
+                <button 
+                  onClick={() => setAppMode('client')} 
+                  style={{ flex: 1, padding: '4px', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 500, background: appMode === 'client' ? 'var(--bg-tertiary)' : 'transparent', color: appMode === 'client' ? 'var(--text-primary)' : 'var(--text-muted)' }}
+                >
+                  Client
+                </button>
+                <button 
+                  onClick={() => setAppMode('designer')} 
+                  style={{ flex: 1, padding: '4px', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 500, background: appMode === 'designer' ? 'var(--bg-tertiary)' : 'transparent', color: appMode === 'designer' ? 'var(--text-primary)' : 'var(--text-muted)' }}
+                >
+                  Designer
+                </button>
+              </div>
             </div>
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
               <div style={{ padding: '16px', color: 'var(--text-muted)', fontSize: '0.875rem' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span>Collections</span>
-                  <button
-                    onClick={() => setIsCollectionModalOpen(true)}
-                    style={{ color: 'var(--text-muted)' }}
-                  >
-                    <Plus size={14} />
-                  </button>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      style={{ color: 'var(--text-muted)' }}
+                      title="Import Postman Collection"
+                    >
+                      <Download size={14} />
+                    </button>
+                    <button
+                      onClick={() => setIsDeployModalOpen(true)}
+                      style={{ color: 'var(--status-success)' }}
+                      title="Export CI/CD Pipeline"
+                    >
+                      <Rocket size={14} />
+                    </button>
+                    <button
+                      onClick={() => setIsCollectionModalOpen(true)}
+                      style={{ color: 'var(--text-muted)' }}
+                      title="New Collection"
+                    >
+                      <Plus size={14} />
+                    </button>
+                  </div>
+                  <input 
+                    type="file" 
+                    ref={fileInputRef} 
+                    style={{ display: 'none' }} 
+                    accept=".json"
+                    onChange={handleImportCollection}
+                  />
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '12px' }}>
                   {collections.map(col => (
@@ -927,7 +1051,10 @@ function App() {
 
         <Panel minSize={30}>
           <main style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', backgroundColor: 'var(--bg-primary)', overflow: 'hidden' }}>
-
+            {appMode === 'designer' ? (
+              <ApiDesigner value={openApiDoc} onChange={setOpenApiDoc} />
+            ) : (
+              <>
             <div style={{ display: 'flex', background: 'var(--bg-tertiary)', borderBottom: '1px solid var(--border-color)', overflowX: 'auto', WebkitAppRegion: 'drag' } as React.CSSProperties}>
               {workspaceTabs.map(tab => (
                 <div
@@ -1033,11 +1160,36 @@ function App() {
                 </button>
               </div>
 
+              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', color: 'var(--text-primary)', cursor: 'pointer', background: 'var(--bg-secondary)', padding: '6px 12px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                <input type="checkbox" checked={isMockEnabled} onChange={e => setIsMockEnabled(e.target.checked)} /> Prism Mock
+              </label>
+
               <button
                 onClick={() => setIsSaveModalOpen(true)}
                 style={{ minWidth: '80px', background: 'var(--bg-tertiary)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', padding: '0 16px', borderRadius: '8px', fontWeight: 500, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
               >
                 <Save size={16} /> Save
+              </button>
+
+              <button
+                onClick={() => setIsLoadModalOpen(true)}
+                style={{ minWidth: '100px', background: 'var(--bg-tertiary)', color: 'var(--accent-blue)', border: '1px solid var(--border-color)', padding: '0 16px', borderRadius: '8px', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+              >
+                Load Test
+              </button>
+
+              <button
+                onClick={() => setIsSecurityModalOpen(true)}
+                style={{ minWidth: '100px', background: 'var(--bg-tertiary)', color: 'var(--status-warning)', border: '1px solid var(--border-color)', padding: '0 16px', borderRadius: '8px', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+              >
+                Scan API
+              </button>
+
+              <button
+                onClick={() => setIsDataDrivenModalOpen(true)}
+                style={{ minWidth: '100px', background: 'var(--bg-tertiary)', color: 'var(--status-success)', border: '1px solid var(--border-color)', padding: '0 16px', borderRadius: '8px', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+              >
+                Data-Driven
               </button>
 
               {['WS', 'WSS'].includes(method) ? (
@@ -1389,6 +1541,8 @@ function App() {
                 </>
               )}
             </PanelGroup>
+              </>
+            )}
           </main>
         </Panel>
       </PanelGroup>
@@ -1592,6 +1746,438 @@ function App() {
                   })() : (
                     <div className="flex-center" style={{ height: '100%', color: 'var(--text-muted)' }}>Select an environment to edit</div>
                   )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+      }
+
+      {
+        isLoadModalOpen && (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
+            <div className="glass-panel" style={{ width: '600px', background: 'var(--bg-secondary)', borderRadius: '12px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px', boxShadow: 'var(--shadow-lg)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h2 style={{ fontSize: '1.2rem', fontWeight: 600 }}>Performance Load Runner</h2>
+                <button onClick={() => { setIsLoadModalOpen(false); setLoadResult(null); }} style={{ color: 'var(--text-muted)' }} disabled={isLoadRunning}><X size={20} /></button>
+              </div>
+              
+              {!loadResult && !isLoadRunning && (
+                 <>
+                  <div style={{ display: 'flex', gap: '16px' }}>
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      <label style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Virtual Users (Concurrency)</label>
+                      <input type="number" value={loadVusers} onChange={e => setLoadVusers(parseInt(e.target.value) || 1)} style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '10px 12px', borderRadius: '6px' }} min={1} max={1000} />
+                    </div>
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      <label style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Iterations per User</label>
+                      <input type="number" value={loadIterations} onChange={e => setLoadIterations(parseInt(e.target.value) || 1)} style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '10px 12px', borderRadius: '6px' }} min={1} max={100} />
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '16px' }}>
+                     <button
+                        onClick={async () => {
+                           setIsLoadRunning(true);
+                           setLoadResult(null);
+                           setLoadProgress(0);
+                           setLoadTotal(loadVusers * loadIterations);
+                           
+                           const activeEnv = environments.find(e => e.id === activeEnvId);
+                           const resolveVariables = (text: string) => {
+                             if (!text || !activeEnv) return text;
+                             return text.replace(/\{\{(.*?)\}\}/g, (match, key) => {
+                               const variable = activeEnv.variables.find(v => v.key === key.trim() && v.enabled);
+                               return variable ? variable.value : match;
+                             });
+                           };
+                           
+                           const reqHeaders: Record<string, string> = {};
+                           headers.filter(h => h.enabled && h.key).forEach(h => { reqHeaders[h.key] = resolveVariables(h.value); });
+                           let rUrl = resolveVariables(url);
+                           if (authType === 'Bearer Token' && bearerToken) reqHeaders['Authorization'] = `Bearer ${resolveVariables(bearerToken)}`;
+                           if (['POST', 'PUT', 'PATCH'].includes(method)) reqHeaders['Content-Type'] = 'application/json';
+
+                           try {
+                             const res = await runLoadTest({
+                               url: rUrl,
+                               method,
+                               headers: reqHeaders,
+                               body: resolveVariables(reqBody),
+                               vusers: loadVusers,
+                               iterations: loadIterations
+                             }, (c) => setLoadProgress(c));
+                             setLoadResult(res);
+                           } catch (err: any) {
+                             alert("Load Error: " + err.message);
+                           } finally {
+                             setIsLoadRunning(false);
+                           }
+                        }}
+                        style={{ padding: '10px 24px', background: 'var(--status-error)', color: '#fff', borderRadius: '8px', fontWeight: 600, display: 'flex', gap: '8px' }}
+                     >
+                        <Play size={18} fill="currentColor" /> Start Traffic
+                     </button>
+                  </div>
+                 </>
+              )}
+
+              {isLoadRunning && (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px', padding: '40px 0' }}>
+                   <Loader2 size={48} className="lucide-spin" color="var(--accent-blue)" />
+                   <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '1.2rem' }}>Blasting Requests...</div>
+                   <div style={{ color: 'var(--text-muted)' }}>{loadProgress} / {loadTotal} complete</div>
+                   <div style={{ width: '100%', height: '8px', background: 'var(--bg-primary)', borderRadius: '4px', overflow: 'hidden' }}>
+                      <div style={{ width: `${(loadProgress/loadTotal)*100}%`, height: '100%', background: 'var(--accent-blue)', transition: 'width 0.2s' }}></div>
+                   </div>
+                </div>
+              )}
+
+              {loadResult && !isLoadRunning && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                     <div style={{ padding: '16px', background: 'var(--bg-tertiary)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Total Requests</div>
+                        <div style={{ fontSize: '1.5rem', fontWeight: 600, color: 'var(--text-primary)' }}>{loadResult.totalRequests}</div>
+                     </div>
+                     <div style={{ padding: '16px', background: 'var(--bg-tertiary)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Success Rate</div>
+                        <div style={{ fontSize: '1.5rem', fontWeight: 600, color: loadResult.failed === 0 ? 'var(--status-success)' : 'var(--status-error)' }}>
+                          {((loadResult.successful / loadResult.totalRequests) * 100).toFixed(1)}%
+                        </div>
+                     </div>
+                     <div style={{ padding: '16px', background: 'var(--bg-tertiary)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Avg Latency</div>
+                        <div style={{ fontSize: '1.5rem', fontWeight: 600, color: 'var(--accent-blue)' }}>{loadResult.avgLatency.toFixed(2)} ms</div>
+                     </div>
+                     <div style={{ padding: '16px', background: 'var(--bg-tertiary)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>P95 Latency</div>
+                        <div style={{ fontSize: '1.5rem', fontWeight: 600, color: 'var(--status-warning)' }}>{loadResult.p95Latency.toFixed(2)} ms</div>
+                     </div>
+                  </div>
+                  {Object.keys(loadResult.errors).length > 0 && (
+                     <div style={{ padding: '16px', background: 'rgba(239, 68, 68, 0.05)', borderRadius: '8px', border: '1px solid var(--status-error)' }}>
+                        <div style={{ fontWeight: 600, color: 'var(--status-error)', marginBottom: '8px' }}>Errors Encountered:</div>
+                        {Object.entries(loadResult.errors).map(([err, count]) => (
+                           <div key={err} style={{ fontSize: '0.85rem', color: 'var(--text-primary)', display: 'flex', justifyContent: 'space-between' }}>
+                              <span>{err}</span>
+                              <span style={{ fontWeight: 600 }}>{count}x</span>
+                           </div>
+                        ))}
+                     </div>
+                  )}
+                  <button onClick={() => setLoadResult(null)} style={{ padding: '10px', background: 'var(--bg-tertiary)', borderRadius: '8px', border: '1px solid var(--border-color)', color: 'var(--text-primary)', fontWeight: 600, marginTop: '8px' }}>Run Another Test</button>
+                </div>
+              )}
+            </div>
+          </div>
+        )
+      }
+
+      {
+        isSecurityModalOpen && (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
+            <div className="glass-panel" style={{ width: '700px', maxHeight: '85vh', background: 'var(--bg-secondary)', borderRadius: '12px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px', boxShadow: 'var(--shadow-lg)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h2 style={{ fontSize: '1.2rem', fontWeight: 600 }}>Automated Security Scanner</h2>
+                <button onClick={() => { setIsSecurityModalOpen(false); setSecurityResult(null); }} style={{ color: 'var(--text-muted)' }} disabled={isSecurityRunning}><X size={20} /></button>
+              </div>
+
+              {!securityResult && !isSecurityRunning && (
+                <div style={{ padding: '20px', background: 'var(--bg-tertiary)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '16px' }}>Run a quick fuzzing scan against the current endpoints query parameters to check for common unescaped SQL injections and XSS vulnerabilities.</p>
+                  
+                  <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                     <button
+                        onClick={async () => {
+                           setIsSecurityRunning(true);
+                           setSecurityResult(null);
+                           setSecurityProgress('Starting scan...');
+                           
+                           const activeEnv = environments.find(e => e.id === activeEnvId);
+                           const resolveVariables = (text: string) => {
+                             if (!text || !activeEnv) return text;
+                             return text.replace(/\{\{(.*?)\}\}/g, (match, key) => {
+                               const variable = activeEnv.variables.find(v => v.key === key.trim() && v.enabled);
+                               return variable ? variable.value : match;
+                             });
+                           };
+                           
+                           const reqHeaders: Record<string, string> = {};
+                           headers.filter(h => h.enabled && h.key).forEach(h => { reqHeaders[h.key] = resolveVariables(h.value); });
+                           let rUrl = resolveVariables(url);
+                           if (authType === 'Bearer Token' && bearerToken) reqHeaders['Authorization'] = `Bearer ${resolveVariables(bearerToken)}`;
+                           if (['POST', 'PUT', 'PATCH'].includes(method)) reqHeaders['Content-Type'] = 'application/json';
+
+                           // pass active params
+                           const validParams = params.filter(p => p.enabled && p.key).map(p => ({
+                             key: resolveVariables(p.key),
+                             value: resolveVariables(p.value)
+                           }));
+
+                           try {
+                             const res = await runSecurityScan({
+                               url: rUrl,
+                               method,
+                               headers: reqHeaders,
+                               params: validParams,
+                               body: resolveVariables(reqBody)
+                             }, (msg) => setSecurityProgress(msg));
+                             setSecurityResult(res);
+                           } catch (err: any) {
+                             alert("Security Scan Error: " + err.message);
+                           } finally {
+                             setIsSecurityRunning(false);
+                           }
+                        }}
+                        style={{ padding: '10px 24px', background: 'var(--status-warning)', color: '#000', borderRadius: '8px', fontWeight: 600, display: 'flex', gap: '8px' }}
+                     >
+                        <AlertTriangle size={18} /> Launch Scan
+                     </button>
+                  </div>
+                </div>
+              )}
+
+              {isSecurityRunning && (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px', padding: '40px 0' }}>
+                   <Loader2 size={48} className="lucide-spin" color="var(--status-warning)" />
+                   <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '1.2rem' }}>Scanning for Vulnerabilities...</div>
+                   <div style={{ color: 'var(--text-muted)' }}>{securityProgress}</div>
+                </div>
+              )}
+
+              {securityResult && !isSecurityRunning && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', overflowY: 'auto' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                     <div style={{ padding: '16px', background: 'var(--bg-tertiary)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Vulnerabilities Found</div>
+                        <div style={{ fontSize: '1.5rem', fontWeight: 600, color: securityResult.vulnerabilitiesFound > 0 ? 'var(--status-error)' : 'var(--status-success)' }}>
+                           {securityResult.vulnerabilitiesFound}
+                        </div>
+                     </div>
+                     <div style={{ padding: '16px', background: 'var(--bg-tertiary)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Tests Run</div>
+                        <div style={{ fontSize: '1.5rem', fontWeight: 600, color: 'var(--text-primary)' }}>{securityResult.scannedEndpoints}</div>
+                     </div>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--text-primary)', borderBottom: '1px solid var(--border-color)', paddingBottom: '4px' }}>Scan Report</div>
+                    {securityResult.results.length === 0 ? (
+                       <div style={{ color: 'var(--text-muted)', fontSize: '0.9rem', padding: '16px', textAlign: 'center', background: 'var(--bg-tertiary)', borderRadius: '8px' }}>No parameters were parsed to scan. Ensure you have active query parameters.</div>
+                    ) : (
+                       securityResult.results.map((r, i) => (
+                         <div key={i} style={{ padding: '12px', background: r.isVulnerable ? 'rgba(239, 68, 68, 0.1)' : 'var(--bg-tertiary)', border: `1px solid ${r.isVulnerable ? 'var(--status-error)' : 'var(--border-color)'}`, borderRadius: '8px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 600, color: r.isVulnerable ? 'var(--status-error)' : 'var(--status-success)', fontSize: '0.9rem' }}>
+                              {r.isVulnerable ? <AlertTriangle size={14}/> : <CheckCircle2 size={14} />} {r.vulnerabilityType}
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '100px 1fr', gap: '4px', marginTop: '8px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                              <span>Target:</span> <span style={{ color: 'var(--text-primary)'}}>{r.targetParameter}</span>
+                              <span>Payload:</span> <code style={{ background: 'var(--bg-primary)', padding: '2px 6px', borderRadius: '4px', overflowX: 'auto' }}>{r.payload}</code>
+                              <span>Notes:</span> <span style={{ color: 'var(--text-primary)'}}>{r.notes}</span>
+                            </div>
+                         </div>
+                       ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )
+      }
+
+      {
+        isDataDrivenModalOpen && (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
+            <div className="glass-panel" style={{ width: '800px', maxHeight: '85vh', background: 'var(--bg-secondary)', borderRadius: '12px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px', boxShadow: 'var(--shadow-lg)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h2 style={{ fontSize: '1.2rem', fontWeight: 600 }}>Data-Driven Functional Tests</h2>
+                <button onClick={() => { setIsDataDrivenModalOpen(false); setDataDrivenResult(null); }} style={{ color: 'var(--text-muted)' }} disabled={isDataDrivenRunning}><X size={20} /></button>
+              </div>
+
+              {!dataDrivenResult && !isDataDrivenRunning && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Execute this request repeatedly against a provided CVS dataset. Column names map directly to <code>{`{{ variable }}`}</code> references.</p>
+                  
+                  <textarea 
+                    value={csvDataInput}
+                    onChange={e => setCsvDataInput(e.target.value)}
+                    style={{ width: '100%', height: '200px', background: 'var(--bg-primary)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '12px', fontFamily: 'monospace' }}
+                    placeholder="id, name&#10;1, alice&#10;2, bob"
+                  />
+                  
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '8px' }}>
+                     <button
+                        onClick={async () => {
+                           setIsDataDrivenRunning(true);
+                           setDataDrivenResult(null);
+                           
+                           const activeEnv = environments.find(e => e.id === activeEnvId);
+                           const resolveBaseVars = (text: string) => {
+                             if (!text || !activeEnv) return text;
+                             return text.replace(/\{\{(.*?)\}\}/g, (match, key) => {
+                               const variable = activeEnv.variables.find(v => v.key === key.trim() && v.enabled);
+                               return variable ? variable.value : match; // leave unresolved for CSV engine to catch
+                             });
+                           };
+                           
+                           const reqHeaders: Record<string, string> = {};
+                           headers.filter(h => h.enabled && h.key).forEach(h => { reqHeaders[h.key] = resolveBaseVars(h.value); });
+                           if (authType === 'Bearer Token' && bearerToken) reqHeaders['Authorization'] = `Bearer ${resolveBaseVars(bearerToken)}`;
+                           if (['POST', 'PUT', 'PATCH'].includes(method)) reqHeaders['Content-Type'] = 'application/json';
+
+                           try {
+                             const res = await runDataDrivenTest(
+                               csvDataInput,
+                               resolveBaseVars(url),
+                               method,
+                               reqHeaders,
+                               resolveBaseVars(reqBody)
+                             );
+                             setDataDrivenResult(res);
+                           } catch (err: any) {
+                             alert("Data-Driven Error: " + err.message);
+                           } finally {
+                             setIsDataDrivenRunning(false);
+                           }
+                        }}
+                        style={{ padding: '10px 24px', background: 'var(--status-success)', color: '#fff', borderRadius: '8px', fontWeight: 600, display: 'flex', gap: '8px' }}
+                     >
+                        <Play size={18} fill="currentColor" /> Run Dataset
+                     </button>
+                  </div>
+                </div>
+              )}
+
+              {isDataDrivenRunning && (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px', padding: '40px 0' }}>
+                   <Loader2 size={48} className="lucide-spin" color="var(--status-success)" />
+                   <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '1.2rem' }}>Executing Rows...</div>
+                </div>
+              )}
+
+              {dataDrivenResult && !isDataDrivenRunning && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', overflowY: 'auto' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+                     <div style={{ padding: '16px', background: 'var(--bg-tertiary)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Rows Processed</div>
+                        <div style={{ fontSize: '1.5rem', fontWeight: 600, color: 'var(--text-primary)' }}>{dataDrivenResult.totalRows}</div>
+                     </div>
+                     <div style={{ padding: '16px', background: 'var(--bg-tertiary)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Passed (2xx Status)</div>
+                        <div style={{ fontSize: '1.5rem', fontWeight: 600, color: 'var(--status-success)' }}>{dataDrivenResult.passedCount}</div>
+                     </div>
+                     <div style={{ padding: '16px', background: 'var(--bg-tertiary)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Failed Tests</div>
+                        <div style={{ fontSize: '1.5rem', fontWeight: 600, color: dataDrivenResult.failedCount > 0 ? 'var(--status-error)' : 'var(--text-primary)' }}>{dataDrivenResult.failedCount}</div>
+                     </div>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--text-primary)', borderBottom: '1px solid var(--border-color)', paddingBottom: '4px' }}>Execution Trace</div>
+                    {dataDrivenResult.results.map((r, i) => (
+                      <div key={i} style={{ padding: '12px', background: r.passed ? 'rgba(34, 197, 94, 0.05)' : 'rgba(239, 68, 68, 0.05)', border: `1px solid ${r.passed ? 'var(--status-success)' : 'var(--status-error)'}`, borderRadius: '8px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                           <div style={{ fontWeight: 600, color: r.passed ? 'var(--status-success)' : 'var(--status-error)' }}>Iteration #{r.iteration}</div>
+                           <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Status: {r.status} | {r.timeMs.toFixed(0)} ms</div>
+                        </div>
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', background: 'var(--bg-primary)', padding: '6px', borderRadius: '4px', overflowX: 'auto', fontFamily: 'monospace' }}>
+                          {JSON.stringify(r.row)}
+                        </div>
+                        {r.error && <div style={{ fontSize: '0.85rem', color: 'var(--status-error)', marginTop: '8px' }}>{r.error}</div>}
+                      </div>
+                    ))}
+                  </div>
+                  
+                  <button onClick={() => setDataDrivenResult(null)} style={{ padding: '10px', background: 'var(--bg-tertiary)', borderRadius: '8px', border: '1px solid var(--border-color)', color: 'var(--text-primary)', fontWeight: 600, marginTop: '8px' }}>Edit Dataset</button>
+                </div>
+              )}
+            </div>
+          </div>
+        )
+      }
+
+      {
+        isDeployModalOpen && (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
+            <div className="glass-panel" style={{ width: '600px', background: 'var(--bg-secondary)', borderRadius: '12px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px', boxShadow: 'var(--shadow-lg)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h2 style={{ fontSize: '1.2rem', fontWeight: 600 }}>Export CI/CD Pipeline Bundle</h2>
+                <button onClick={() => setIsDeployModalOpen(false)} style={{ color: 'var(--text-muted)' }}><X size={20} /></button>
+              </div>
+
+              <div style={{ padding: '20px', background: 'var(--bg-tertiary)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '16px' }}>
+                  Generate a Node.js Headless Runner containing all your active Collections, Requests, and Environments. Drop the extracted contents directly into your repository to enable automated functional regression tests in GitHub Actions, Jenkins, or arbitrary pipelines.
+                </p>
+
+                <div style={{ padding: '16px', background: 'var(--bg-primary)', borderRadius: '8px', border: '1px solid var(--border-color)', marginBottom: '16px' }}>
+                   <div style={{ fontWeight: 600, fontSize: '0.9rem', marginBottom: '8px' }}>Bundle Contents:</div>
+                   <ul style={{ listStyle: 'circle', paddingLeft: '20px', color: 'var(--text-muted)', fontSize: '0.85rem', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                     <li><code>api360-runner.js</code> (Zero-dependency Node executor engine)</li>
+                     <li><code>workspace.api360.json</code> (Your entire workspace)</li>
+                     <li><code>.github/workflows/api360-tests.yml</code></li>
+                     <li><code>Jenkinsfile</code></li>
+                   </ul>
+                </div>
+                
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
+                   <button
+                      onClick={() => setIsDeployModalOpen(false)}
+                      style={{ padding: '10px 16px', background: 'transparent', color: 'var(--text-primary)', borderRadius: '8px', fontWeight: 600 }}
+                   >
+                      Cancel
+                   </button>
+                   <button
+                      onClick={async () => {
+                         const zip = new JSZip();
+                         // Package config
+                         zip.file("workspace.api360.json", JSON.stringify({ collections, requests: savedRequests, environments }, null, 2));
+                         // Package CLI
+                         zip.file("api360-runner.js", CLI_RUNNER_TEMPLATE);
+                         // GitHub Actions
+                         zip.folder(".github/workflows")?.file("api360-tests.yml", [
+                           "name: API360 Functional Tests",
+                           "on: [push, pull_request]",
+                           "jobs:",
+                           "  test:",
+                           "    runs-on: ubuntu-latest",
+                           "    steps:",
+                           "      - uses: actions/checkout@v3",
+                           "      - name: Setup Node",
+                           "        uses: actions/setup-node@v3",
+                           "        with:",
+                           "          node-version: '18'",
+                           "      - name: Execute API360 Headless Tests",
+                           "        run: node api360-runner.js --workspace=workspace.api360.json"
+                         ].join('\\n'));
+                         // Jenkinsfile
+                         zip.file("Jenkinsfile", [
+                           "pipeline {",
+                           "    agent any",
+                           "    stages {",
+                           "        stage('API Tests') {",
+                           "            steps {",
+                           "                sh 'node api360-runner.js --workspace=workspace.api360.json'",
+                           "            }",
+                           "        }",
+                           "    }",
+                           "}"
+                         ].join('\\n'));
+
+                         const blob = await zip.generateAsync({ type: "blob" });
+                         const url = URL.createObjectURL(blob);
+                         const a = document.createElement("a");
+                         a.href = url;
+                         a.download = "api360-deployment-bundle.zip";
+                         a.click();
+                         URL.revokeObjectURL(url);
+                         setIsDeployModalOpen(false);
+                      }}
+                      style={{ padding: '10px 24px', background: 'var(--status-success)', color: '#fff', borderRadius: '8px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}
+                   >
+                      <Download size={16} /> Download Bundle (.zip)
+                   </button>
                 </div>
               </div>
             </div>
