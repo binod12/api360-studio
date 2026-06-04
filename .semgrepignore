@@ -1,0 +1,8 @@
+# Exclude scratch/playground code, local CLI tools, and build assets from Semgrep SAST scan
+node_modules/
+dist/
+out/
+webview-dist/
+packages/app/scratch/
+packages/app/cli/
+packages/app/bin/
