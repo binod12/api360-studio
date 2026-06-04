@@ -1,7 +1,13 @@
 import fs from 'fs'; 
 
 // Need to quickly fake postman.ts logic for standalone node execution since it's TS
-const jsonStr = fs.readFileSync('/Users/managersahab/Downloads/Bitbucket.postman_collection.json', 'utf8');
+const filePath = process.argv[2] || '/Users/managersahab/Downloads/Bitbucket.postman_collection.json';
+if (!fs.existsSync(filePath)) {
+  console.error(`Error: Postman collection file not found at: ${filePath}`);
+  console.log("Usage:\n  node verify_folders.mjs <path_to_postman_collection_json>");
+  process.exit(1);
+}
+const jsonStr = fs.readFileSync(filePath, 'utf8');
 
 const data = JSON.parse(jsonStr);
 const rootName = data.info?.name || 'Imported Collection';
