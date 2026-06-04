@@ -18,7 +18,7 @@ jobs:
       - name: Build React Webview
         working-directory: ./packages/app
         run: |
-          npm ci --legacy-peer-deps
+          npm install --legacy-peer-deps
           BUILD_TARGET=vscode npm run build
 
       - name: Install Extension Backend
