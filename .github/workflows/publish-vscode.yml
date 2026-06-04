@@ -14,17 +14,15 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: 'package-lock.json'
+
+      - name: Install Workspace Dependencies
+        run: npm install --legacy-peer-deps
 
       - name: Build React Webview
         working-directory: ./packages/app
-        run: |
-          npm install --legacy-peer-deps
-          BUILD_TARGET=vscode npm run build
-
-      - name: Install Extension Backend
-        working-directory: ./packages/vscode
-        run: |
-          npm ci
+        run: BUILD_TARGET=vscode npm run build
 
       - name: Publish to VS Code Marketplace
         working-directory: ./packages/vscode
