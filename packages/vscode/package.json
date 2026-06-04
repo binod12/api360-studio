@@ -7,7 +7,7 @@
     "repository": {
         "type": "git",
         "url": "https://github.com/binod12/api360-studio",
-        "directory": "api360-vscode"
+        "directory": "packages/vscode"
     },
     "icon": "icon.png",
     "engines": {
@@ -34,6 +34,7 @@
         "compile-tests": "tsc -p . --outDir out",
         "watch-tests": "tsc -p . -w --outDir out",
         "pretest": "npm run compile-tests && npm run compile && npm run lint",
+        "lint": "eslint src --ext .ts",
         "test": "vscode-test"
     },
     "devDependencies": {

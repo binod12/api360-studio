@@ -1,10 +1,9 @@
 import * as vscode from 'vscode';
 import axios from 'axios';
-import * as path from 'path';
 import * as fs from 'fs';
 
 export function activate(context: vscode.ExtensionContext) {
-    let disposable = vscode.commands.registerCommand('api360.openWorkspace', () => {
+    const disposable = vscode.commands.registerCommand('api360.openWorkspace', () => {
 
         const panel = vscode.window.createWebviewPanel(
             'api360Studio',
@@ -75,7 +74,7 @@ export function activate(context: vscode.ExtensionContext) {
                         await context.globalState.update(message.key, message.value);
                         return;
 
-                    case 'loadState':
+                    case 'loadState': {
                         const data = context.globalState.get(message.key);
                         panel.webview.postMessage({
                             command: 'stateLoaded',
@@ -83,6 +82,7 @@ export function activate(context: vscode.ExtensionContext) {
                             value: data
                         });
                         return;
+                    }
                 }
             },
             undefined,

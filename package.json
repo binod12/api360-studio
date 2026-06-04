@@ -1,0 +1,14 @@
+{
+  "name": "api360-studio-monorepo",
+  "private": true,
+  "workspaces": [
+    "packages/app",
+    "packages/vscode"
+  ],
+  "scripts": {
+    "build:app": "npm run build --workspace=packages/app",
+    "package:vscode": "npm run package --workspace=packages/vscode",
+    "test:vscode": "npm run test --workspace=packages/vscode",
+    "lint:app": "npm run lint --workspace=packages/app"
+  }
+}

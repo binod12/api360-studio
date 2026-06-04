@@ -1,0 +1,11 @@
+{
+  "id": "env-local",
+  "name": "Localhost",
+  "variables": [
+    {
+      "key": "BASE_URL",
+      "value": "http://localhost:3001",
+      "enabled": true
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "id": "env-prod",
+  "name": "Production",
+  "variables": [
+    {
+      "key": "BASE_URL",
+      "value": "https://petstore.swagger.io/v2",
+      "enabled": true
+    }
+  ]
+}
