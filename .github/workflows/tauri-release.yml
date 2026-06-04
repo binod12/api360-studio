@@ -78,6 +78,7 @@ jobs:
 
       - name: Upload Portable Releases (Windows)
         if: matrix.platform == 'windows-latest'
+        shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ github.event.inputs.tag_name || github.ref_name || github.run_id }}
