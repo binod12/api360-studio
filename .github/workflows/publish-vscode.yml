@@ -18,7 +18,7 @@ jobs:
           cache-dependency-path: 'package-lock.json'
 
       - name: Install Workspace Dependencies
-        run: npm install --legacy-peer-deps
+        run: npm install --no-package-lock --legacy-peer-deps
 
       - name: Build React Webview
         working-directory: ./packages/app
