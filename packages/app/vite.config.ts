@@ -8,7 +8,7 @@ export default defineConfig(() => {
   return {
     plugins: isExtension ? [react(), viteSingleFile()] : [react()],
     build: {
-      outDir: isExtension ? '../api360-vscode/webview-dist' : 'dist',
+      outDir: isExtension ? '../vscode/webview-dist' : 'dist',
       emptyOutDir: true,
     }
   }

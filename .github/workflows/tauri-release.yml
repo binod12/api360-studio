@@ -35,7 +35,7 @@ jobs:
         with:
           node-version: 20
           cache: 'npm'
-          cache-dependency-path: './api360/package-lock.json'
+          cache-dependency-path: './packages/app/package-lock.json'
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -49,7 +49,7 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
       - name: Install Frontend Dependencies
-        working-directory: ./api360
+        working-directory: ./packages/app
         run: npm install --legacy-peer-deps
 
       - name: Build and Release Tauri App
@@ -57,7 +57,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          projectPath: './api360'
+          projectPath: './packages/app'
           tagName: ${{ github.event.inputs.tag_name || github.ref_name || github.run_id }}
           releaseName: 'API360 Studio ${{ github.event.inputs.tag_name || github.ref_name || github.run_id }}'
           releaseBody: 'See the attached assets to download API360 for your operating system. Use the portable ZIP files if you cannot use the installers.'
@@ -69,20 +69,20 @@ jobs:
         if: matrix.platform == 'windows-latest'
         run: |
           New-Item -ItemType Directory -Force -Path api360-portable
-          Copy-Item -Path "api360/src-tauri/target/release/app.exe" -Destination "api360-portable/api360.exe"
+          Copy-Item -Path "packages/app/src-tauri/target/release/app.exe" -Destination "api360-portable/api360.exe"
           Compress-Archive -Path "api360-portable/*" -DestinationPath api360-windows-portable.zip
           
       - name: Create Portable Mac ZIP (Apple Silicon)
         if: matrix.platform == 'macos-latest' && contains(matrix.args, 'aarch64')
         run: |
-          cd api360/src-tauri/target/aarch64-apple-darwin/release/bundle/macos
-          zip -r ../../../../../../../api360-mac-apple-silicon-portable.zip "api360.app"
+          cd packages/app/src-tauri/target/aarch64-apple-darwin/release/bundle/macos
+          zip -r ../../../../../../../../api360-mac-apple-silicon-portable.zip "api360.app"
           
       - name: Create Portable Mac ZIP (Intel)
         if: matrix.platform == 'macos-latest' && contains(matrix.args, 'x86_64')
         run: |
-          cd api360/src-tauri/target/x86_64-apple-darwin/release/bundle/macos
-          zip -r ../../../../../../../api360-mac-intel-portable.zip "api360.app"
+          cd packages/app/src-tauri/target/x86_64-apple-darwin/release/bundle/macos
+          zip -r ../../../../../../../../api360-mac-intel-portable.zip "api360.app"
 
       - name: Upload Portable Releases (Windows)
         if: matrix.platform == 'windows-latest'

@@ -22,18 +22,18 @@ jobs:
           node-version: '20'
 
       - name: Build React Webview
-        working-directory: ./api360
+        working-directory: ./packages/app
         run: |
           npm ci --legacy-peer-deps
           BUILD_TARGET=vscode npm run build
 
       - name: Install Extension Backend
-        working-directory: ./api360-vscode
+        working-directory: ./packages/vscode
         run: |
           npm ci
 
       - name: Publish to VS Code Marketplace
-        working-directory: ./api360-vscode
+        working-directory: ./packages/vscode
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
         run: |

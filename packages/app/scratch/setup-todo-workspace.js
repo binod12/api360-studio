@@ -1,0 +1,48 @@
+import { writeWorkspace } from '../cli/workspace.js';
+import path from 'path';
+
+const workspacePath = path.resolve('./scratch/todo-workspace');
+
+const todoWorkspaceData = {
+  name: "Todo Local Workspace",
+  collections: [
+    { id: "col-todo", name: "Todos Endpoints" }
+  ],
+  requests: [
+    {
+      id: "req-list",
+      collectionId: "col-todo",
+      method: "GET",
+      name: "List Todos",
+      url: "{{BASE_URL}}/todos",
+      headers: [{ key: "Accept", value: "application/json", enabled: true }],
+      params: [],
+      body: "",
+      preScript: "console.log('Fetching Todo list...')"
+    },
+    {
+      id: "req-create",
+      collectionId: "col-todo",
+      method: "POST",
+      name: "Create Todo",
+      url: "{{BASE_URL}}/todos",
+      headers: [{ key: "Content-Type", value: "application/json", enabled: true }],
+      params: [],
+      body: JSON.stringify({ title: "Verify decoupled CLI engine", completed: false }),
+      postScript: "pm.test('Should return 201 Created', () => { pm.expect(pm.response.code).to.eql(201); })"
+    }
+  ],
+  environments: [
+    {
+      id: "env-local",
+      name: "Localhost",
+      variables: [
+        { key: "BASE_URL", value: "http://localhost:3001", enabled: true }
+      ]
+    }
+  ]
+};
+
+console.log("Generating Git-native workspace directories in scratch/todo-workspace...");
+writeWorkspace(workspacePath, todoWorkspaceData);
+console.log("✓ Done! Workspace created successfully.");

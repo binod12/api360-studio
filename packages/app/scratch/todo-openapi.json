@@ -1,0 +1,19 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Todo API Service",
+    "version": "1.0.0"
+  },
+  "servers": [
+    { "url": "http://localhost:3001" }
+  ],
+  "paths": {
+    "/todos": {
+      "get": { "summary": "Retrieve all todos" },
+      "post": { "summary": "Create a new todo" }
+    },
+    "/todo": {
+      "get": { "summary": "Get a specific todo" }
+    }
+  }
+}

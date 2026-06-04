@@ -15,6 +15,9 @@ import { runSecurityScan, type SecurityScanReport } from './securityScanner';
 import { runDataDrivenTest, type DataDrivenReport } from './dataDrivenTester';
 import { CLI_RUNNER_TEMPLATE } from './cliRunnerTemplate';
 import JSZip from 'jszip';
+import { selectWorkspaceDir, runCliCommand, isTauri, writeTextFile } from './tauriClient';
+// @ts-ignore
+import { generateKongConfig, generateAwsGatewayConfig, generateK8sIngress } from '../cli/apim.js';
 
 interface WsMessage {
   id: string;
@@ -196,6 +199,128 @@ function App() {
 
   const [environments, setEnvironments] = useLocalStorage<Environment[]>('api360_environments', [{ id: 'default', name: 'Global', variables: [{ key: 'BASE_URL', value: 'https://api.example.com', enabled: true }] }]);
   const [activeEnvId, setActiveEnvId] = useLocalStorage<string>('api360_active_env', 'default');
+  const [workspacePath, setWorkspacePath] = useLocalStorage<string>('api360_workspace_path', '');
+  const isSyncingRef = useRef(false);
+
+  const loadWorkspaceFromDir = async (pathStr: string) => {
+    let stdoutData = '';
+    try {
+      isSyncingRef.current = true;
+      await runCliCommand(
+        'read',
+        [`--workspace=${pathStr}`],
+        null,
+        (line) => { stdoutData += line + '\n'; },
+        (errLine) => { console.error("CLI Load Err:", errLine); }
+      );
+      if (stdoutData.trim()) {
+        const parsed = JSON.parse(stdoutData.trim());
+        if (parsed.collections) setCollections(parsed.collections);
+        if (parsed.requests) setSavedRequests(parsed.requests);
+        if (parsed.environments) setEnvironments(parsed.environments);
+      }
+    } catch (err: any) {
+      console.error("Failed to load workspace from folder:", err);
+    } finally {
+      setTimeout(() => {
+        isSyncingRef.current = false;
+      }, 200);
+    }
+  };
+
+  const saveWorkspaceToDir = async (pathStr: string, currentData: { collections: any[], requests: any[], environments: any[] }) => {
+    try {
+      await runCliCommand(
+        'write',
+        [`--workspace=${pathStr}`, '--json'],
+        JSON.stringify(currentData),
+        () => {},
+        (errLine) => { console.error("CLI Save Err:", errLine); }
+      );
+    } catch (err: any) {
+      console.error("Failed to save workspace to folder:", err);
+    }
+  };
+
+  useEffect(() => {
+    if (isTauri() && workspacePath) {
+      loadWorkspaceFromDir(workspacePath);
+    }
+  }, [workspacePath]);
+
+  useEffect(() => {
+    if (isTauri() && workspacePath && !isSyncingRef.current) {
+      saveWorkspaceToDir(workspacePath, { collections, requests: savedRequests, environments });
+    }
+  }, [collections, savedRequests, environments]);
+
+  const handleSelectWorkspace = async () => {
+    const dir = await selectWorkspaceDir();
+    if (dir) {
+      setWorkspacePath(dir);
+      await loadWorkspaceFromDir(dir);
+    }
+  };
+
+  const handleExportApim = async (target: 'kong' | 'aws' | 'k8s') => {
+    let specObj;
+    try {
+      specObj = JSON.parse(openApiDoc);
+    } catch (e: any) {
+      alert("Invalid OpenAPI JSON specification. Please resolve syntax errors before exporting.");
+      return;
+    }
+
+    let outputConfig = '';
+    let fileName = '';
+    
+    if (target === 'kong') {
+      outputConfig = generateKongConfig(specObj);
+      fileName = 'kong.yml';
+    } else if (target === 'aws') {
+      outputConfig = generateAwsGatewayConfig(specObj);
+      fileName = 'aws-api-gateway.json';
+    } else if (target === 'k8s') {
+      outputConfig = generateK8sIngress(specObj);
+      fileName = 'k8s-ingress.yaml';
+    }
+
+    if (isTauri() && workspacePath) {
+      try {
+        const specPath = `${workspacePath}/specs/openapi.json`;
+        const outPath = `${workspacePath}/apim/${fileName}`;
+        
+        // Write the openapi spec to the specs/openapi.json file
+        await writeTextFile(specPath, JSON.stringify(specObj, null, 2));
+        
+        // Run the CLI generator to build and save the APIM config
+        await runCliCommand(
+          'apim',
+          [
+            `--openapi=${specPath}`,
+            `--target=${target}`,
+            `--out=${outPath}`
+          ],
+          null,
+          () => {},
+          (err) => console.error("CLI APIM Generation Error:", err)
+        );
+        
+        alert(`Successfully generated APIM config in workspace:\n${outPath}`);
+      } catch (err: any) {
+        alert("Failed to export APIM configuration via CLI: " + err.message);
+      }
+    } else {
+      // Browser fallback
+      const blob = new Blob([outputConfig], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName;
+      link.click();
+      URL.revokeObjectURL(url);
+    }
+  };
 
   const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
   const [saveName, setSaveName] = useState('');
@@ -947,6 +1072,15 @@ function App() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span>Collections</span>
                   <div style={{ display: 'flex', gap: '8px' }}>
+                    {isTauri() && (
+                      <button
+                        onClick={handleSelectWorkspace}
+                        style={{ color: workspacePath ? 'var(--accent-blue)' : 'var(--text-muted)' }}
+                        title={workspacePath ? `Active Workspace: ${workspacePath}` : "Open Git-native Workspace Folder"}
+                      >
+                        <Folder size={14} />
+                      </button>
+                    )}
                     <button
                       onClick={() => fileInputRef.current?.click()}
                       style={{ color: 'var(--text-muted)' }}
@@ -1052,7 +1186,7 @@ function App() {
         <Panel minSize={30}>
           <main style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', backgroundColor: 'var(--bg-primary)', overflow: 'hidden' }}>
             {appMode === 'designer' ? (
-              <ApiDesigner value={openApiDoc} onChange={setOpenApiDoc} />
+              <ApiDesigner value={openApiDoc} onChange={setOpenApiDoc} onExportApim={handleExportApim} />
             ) : (
               <>
             <div style={{ display: 'flex', background: 'var(--bg-tertiary)', borderBottom: '1px solid var(--border-color)', overflowX: 'auto', WebkitAppRegion: 'drag' } as React.CSSProperties}>
@@ -1798,15 +1932,42 @@ function App() {
                            if (['POST', 'PUT', 'PATCH'].includes(method)) reqHeaders['Content-Type'] = 'application/json';
 
                            try {
-                             const res = await runLoadTest({
-                               url: rUrl,
-                               method,
-                               headers: reqHeaders,
-                               body: resolveVariables(reqBody),
-                               vusers: loadVusers,
-                               iterations: loadIterations
-                             }, (c) => setLoadProgress(c));
-                             setLoadResult(res);
+                              if (isTauri()) {
+                                await runCliCommand(
+                                  'load',
+                                  [
+                                    `--url=${rUrl}`,
+                                    `--method=${method}`,
+                                    `--headers=${JSON.stringify(reqHeaders)}`,
+                                    reqBody ? `--body=${resolveVariables(reqBody)}` : '',
+                                    `--vusers=${loadVusers}`,
+                                    `--iterations=${loadIterations}`,
+                                    '--json'
+                                  ].filter(Boolean),
+                                  null,
+                                  (line) => {
+                                    try {
+                                      const prog = JSON.parse(line);
+                                      if (prog.type === 'progress') {
+                                        setLoadProgress(prog.completed);
+                                      } else if (prog.type === 'result') {
+                                        setLoadResult(prog.data);
+                                      }
+                                    } catch (e) {}
+                                  },
+                                  (err) => console.error("CLI Load error:", err)
+                                );
+                              } else {
+                                const res = await runLoadTest({
+                                  url: rUrl,
+                                  method,
+                                  headers: reqHeaders,
+                                  body: resolveVariables(reqBody),
+                                  vusers: loadVusers,
+                                  iterations: loadIterations
+                                }, (c) => setLoadProgress(c));
+                                setLoadResult(res);
+                              }
                            } catch (err: any) {
                              alert("Load Error: " + err.message);
                            } finally {
@@ -1915,15 +2076,41 @@ function App() {
                            }));
 
                            try {
-                             const res = await runSecurityScan({
-                               url: rUrl,
-                               method,
-                               headers: reqHeaders,
-                               params: validParams,
-                               body: resolveVariables(reqBody)
-                             }, (msg) => setSecurityProgress(msg));
-                             setSecurityResult(res);
-                           } catch (err: any) {
+                              if (isTauri()) {
+                                await runCliCommand(
+                                  'scan',
+                                  [
+                                    `--url=${rUrl}`,
+                                    `--method=${method}`,
+                                    `--headers=${JSON.stringify(reqHeaders)}`,
+                                    `--params=${JSON.stringify(validParams)}`,
+                                    reqBody ? `--body=${resolveVariables(reqBody)}` : '',
+                                    '--json'
+                                  ].filter(Boolean),
+                                  null,
+                                  (line) => {
+                                    try {
+                                      const prog = JSON.parse(line);
+                                      if (prog.type === 'progress') {
+                                        setSecurityProgress(prog.message);
+                                      } else if (prog.type === 'result') {
+                                        setSecurityResult(prog.data);
+                                      }
+                                    } catch (e) {}
+                                  },
+                                  (err) => console.error("CLI Scan error:", err)
+                                );
+                              } else {
+                                const res = await runSecurityScan({
+                                  url: rUrl,
+                                  method,
+                                  headers: reqHeaders,
+                                  params: validParams,
+                                  body: resolveVariables(reqBody)
+                                }, (msg) => setSecurityProgress(msg));
+                                setSecurityResult(res);
+                              }
+                            } catch (err: any) {
                              alert("Security Scan Error: " + err.message);
                            } finally {
                              setIsSecurityRunning(false);

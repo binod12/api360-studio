@@ -6,9 +6,10 @@ import { Layers, AlertTriangle, CheckCircle2 } from 'lucide-react';
 interface ApiDesignerProps {
   value: string;
   onChange: (val: string) => void;
+  onExportApim?: (target: 'kong' | 'aws' | 'k8s') => void;
 }
 
-export function ApiDesigner({ value, onChange }: ApiDesignerProps) {
+export function ApiDesigner({ value, onChange, onExportApim }: ApiDesignerProps) {
   const [isValid, setIsValid] = useState(true);
   const [errors, setErrors] = useState<any[]>([]);
 
@@ -27,6 +28,32 @@ export function ApiDesigner({ value, onChange }: ApiDesignerProps) {
         </div>
         
         <div style={{ flex: 1 }} />
+
+        {onExportApim && (
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button
+              onClick={() => onExportApim('kong')}
+              style={{ fontSize: '0.8rem', padding: '6px 12px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: '6px', cursor: 'pointer', fontWeight: 500 }}
+              title="Export Kong Declarative Config"
+            >
+              Export Kong
+            </button>
+            <button
+              onClick={() => onExportApim('aws')}
+              style={{ fontSize: '0.8rem', padding: '6px 12px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: '6px', cursor: 'pointer', fontWeight: 500 }}
+              title="Export AWS API Gateway Specs"
+            >
+              Export AWS APIGW
+            </button>
+            <button
+              onClick={() => onExportApim('k8s')}
+              style={{ fontSize: '0.8rem', padding: '6px 12px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: '6px', cursor: 'pointer', fontWeight: 500 }}
+              title="Export Kubernetes Ingress Resource"
+            >
+              Export K8s Ingress
+            </button>
+          </div>
+        )}
         
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', color: isValid ? 'var(--status-success)' : 'var(--status-warning)' }}>
           {isValid ? (

@@ -1,0 +1,15 @@
+_format_version: "3.0"
+services:
+  - name: swagger-petstore-api
+    url: https://petstore.swagger.io/v2
+    routes:
+      - name: swagger-petstore-api-route-1
+        paths:
+          - "/pet/findByStatus"
+        methods:
+          - GET
+      - name: swagger-petstore-api-route-2
+        paths:
+          - "/pet"
+        methods:
+          - POST

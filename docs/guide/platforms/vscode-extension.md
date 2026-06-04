@@ -43,7 +43,7 @@ npm install -g @vscode/vsce
 Navigate into the extension directory, install the required dependencies, and execute the packaging pipeline. The script will automatically trigger a fresh Vite production build from the main API360 workspace, consume the `index.html` blob, and compile a `.vsix` installer.
 
 ```bash
-cd api360-vscode
+cd packages/vscode
 npm install
 npm run package
 code --install-extension api360-0.0.1.vsix
