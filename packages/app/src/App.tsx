@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Play, Loader2, Save, Folder, Plus, X, PanelLeft, PanelBottom, Database, Download, AlertTriangle, CheckCircle2, Rocket } from 'lucide-react';
+import { Play, Loader2, Save, Folder, Plus, X, PanelLeft, PanelBottom, Database, Download, AlertTriangle, CheckCircle2, Rocket, Trash2 } from 'lucide-react';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import type { ImperativePanelHandle } from 'react-resizable-panels';
 import { KeyValueEditor } from './KeyValueEditor';
@@ -201,6 +201,15 @@ function App() {
   const [activeEnvId, setActiveEnvId] = useLocalStorage<string>('api360_active_env', 'default');
   const [workspacePath, setWorkspacePath] = useLocalStorage<string>('api360_workspace_path', '');
   const isSyncingRef = useRef(false);
+
+  const deleteCollection = (colId: string) => {
+    setCollections(prev => prev.filter(c => c.id !== colId));
+    setSavedRequests(prev => prev.filter(r => r.collectionId !== colId));
+  };
+
+  const deleteRequest = (reqId: string) => {
+    setSavedRequests(prev => prev.filter(r => r.id !== reqId));
+  };
 
   const loadWorkspaceFromDir = async (pathStr: string) => {
     let stdoutData = '';
@@ -1114,8 +1123,32 @@ function App() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '12px' }}>
                   {collections.map(col => (
                     <div key={col.id}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-primary)', fontWeight: 500, padding: '6px 0' }}>
-                        <Folder size={14} color="var(--accent-blue)" /> <span className="text-truncate">{col.name}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: 'var(--text-primary)', fontWeight: 500, padding: '6px 0' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden' }}>
+                          <Folder size={14} color="var(--accent-blue)" /> <span className="text-truncate">{col.name}</span>
+                        </div>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (confirm(`Are you sure you want to delete collection "${col.name}"?`)) {
+                              deleteCollection(col.id);
+                            }
+                          }}
+                          style={{
+                            background: 'transparent',
+                            border: 'none',
+                            color: 'var(--text-muted)',
+                            cursor: 'pointer',
+                            padding: '2px',
+                            display: 'flex',
+                            alignItems: 'center',
+                          }}
+                          title="Delete Collection"
+                          onMouseEnter={(e) => e.currentTarget.style.color = 'var(--status-error)'}
+                          onMouseLeave={(e) => e.currentTarget.style.color = 'var(--text-muted)'}
+                        >
+                          <Trash2 size={12} />
+                        </button>
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', paddingLeft: '20px', marginTop: '4px' }}>
                         {savedRequests.filter(r => r.collectionId === col.id).map(r => (
@@ -1128,13 +1161,48 @@ function App() {
                               setParams(r.params.length ? r.params : [{ key: '', value: '', enabled: true }]);
                               if (r.body) setReqBody(r.body);
                             }}
-                            style={{ padding: '6px 8px', background: 'var(--bg-tertiary)', borderRadius: '6px', border: '1px solid transparent', color: 'var(--text-primary)', cursor: 'pointer', fontSize: '0.8rem' }}
+                            style={{ 
+                              padding: '6px 8px', 
+                              background: 'var(--bg-tertiary)', 
+                              borderRadius: '6px', 
+                              border: '1px solid transparent', 
+                              color: 'var(--text-primary)', 
+                              cursor: 'pointer', 
+                              fontSize: '0.8rem',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between'
+                            }}
                             className="text-truncate"
                             onMouseEnter={(e) => e.currentTarget.style.borderColor = 'var(--accent-blue)'}
                             onMouseLeave={(e) => e.currentTarget.style.borderColor = 'transparent'}
                           >
-                            <span style={{ color: `var(--method-${r.method.toLowerCase()})`, fontWeight: 600, marginRight: '6px' }}>{r.method}</span>
-                            {r.name}
+                            <div className="text-truncate" style={{ flex: 1 }}>
+                              <span style={{ color: `var(--method-${r.method.toLowerCase()})`, fontWeight: 600, marginRight: '6px' }}>{r.method}</span>
+                              {r.name}
+                            </div>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (confirm(`Are you sure you want to delete request "${r.name}"?`)) {
+                                  deleteRequest(r.id);
+                                }
+                              }}
+                              style={{
+                                background: 'transparent',
+                                border: 'none',
+                                color: 'var(--text-muted)',
+                                cursor: 'pointer',
+                                padding: '2px',
+                                display: 'flex',
+                                alignItems: 'center',
+                              }}
+                              title="Delete Request"
+                              onMouseEnter={(e) => e.currentTarget.style.color = 'var(--status-error)'}
+                              onMouseLeave={(e) => e.currentTarget.style.color = 'var(--text-muted)'}
+                            >
+                              <X size={12} />
+                            </button>
                           </div>
                         ))}
                       </div>
